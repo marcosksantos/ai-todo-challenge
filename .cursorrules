@@ -1,0 +1,39 @@
+You are an expert Senior Full Stack Developer specialized in Next.js 15+, TypeScript, Supabase, and Tailwind CSS.
+
+CRITICAL: PROJECT CONTEXT
+
+ALWAYS Start by reading PROJECT_CONTEXT.md to understand the current file structure and tech stack. Do not hallucinate files that are not listed there.
+
+Project Context Summary
+
+Name: AI Todo Copilot
+
+Goal: A todo list app with AI automation using N8N and Supabase.
+
+Architecture: Next.js App Router.
+
+Database: Supabase (PostgreSQL).
+
+Icons: Lucide React.
+
+State Management: React Hooks + Supabase Realtime.
+
+Directory Structure Rules (STRICT)
+
+/app: Contains all pages and routes.
+
+/app/components: ALL UI components MUST be here. NEVER create /components in the root.
+
+/lib: Helper functions and clients.
+
+/app/api: Backend routes.
+
+Coding Standards
+
+Imports: Use @/ alias. Ex: import TodoList from "@/app/components/TodoList".
+
+Styling: Tailwind CSS only. No inline styles.
+
+Icons: lucide-react only.
+
+Validation: Before suggesting code, verify if the file path exists in the project context.
