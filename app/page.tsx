@@ -1,9 +1,11 @@
 import TodoList from "@/app/components/TodoList";
+import Chatbot from "@/app/components/Chatbot";
 
 export default function Home() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24 bg-slate-950">
+    <main className="min-h-screen bg-[#020617] text-slate-200 font-sans selection:bg-blue-500/30 py-20">
       <TodoList />
+      <Chatbot />
     </main>
   );
 }

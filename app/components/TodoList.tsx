@@ -50,23 +50,59 @@ export default function TodoList() {
   };
 
   return (
-    <div className="w-full max-w-2xl mx-auto">
-      <div className="mb-8 text-center">
-        <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent mb-2">AI Todo Copilot</h1>
-        <p className="text-slate-400">Smart tasks with Supabase & N8N</p>
+    <div className="w-full max-w-2xl mx-auto bg-[#0B0F19] border border-slate-800 rounded-xl shadow-2xl overflow-hidden">
+      {/* Header */}
+      <div className="px-6 pt-6 pb-4 border-b border-slate-800/50">
+        <h1 className="text-2xl font-semibold text-slate-200 mb-1">Tasks</h1>
+        <p className="text-slate-400 text-sm">Manage your tasks with AI assistance</p>
       </div>
-      <div className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800 mb-8">
-        <form onSubmit={handleAdd} className="flex gap-3">
-          <input type="text" value={newTask} onChange={e => setNewTask(e.target.value)} placeholder="New task..." className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-blue-500 outline-none" disabled={submitting} />
-          <button type="submit" disabled={submitting} className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-xl font-medium flex items-center gap-2">
-            {submitting ? <Loader2 className="animate-spin"/> : <Bot/>} AI Create
+
+      {/* Input Container */}
+      <div className="px-6 py-4 border-b border-slate-800/50">
+        <form onSubmit={handleAdd} className="flex gap-2">
+          <input
+            type="text"
+            value={newTask}
+            onChange={e => setNewTask(e.target.value)}
+            placeholder="Add a new task..."
+            className="flex-1 bg-transparent text-slate-200 placeholder-slate-500 focus:outline-none text-sm"
+            disabled={submitting}
+          />
+          <button
+            type="submit"
+            disabled={submitting || !newTask.trim()}
+            className="bg-gradient-to-br from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 disabled:from-slate-700 disabled:to-slate-700 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-all text-sm"
+          >
+            {submitting ? (
+              <>
+                <Loader2 className="animate-spin" size={16} />
+                <span>Creating...</span>
+              </>
+            ) : (
+              <>
+                <Bot size={16} />
+                <span>Create</span>
+              </>
+            )}
           </button>
         </form>
       </div>
-      <div className="space-y-3">
-        {loading ? <div className="text-center text-slate-500"><Loader2 className="animate-spin inline"/> Loading...</div> : tasks.map(t => <TodoItem key={t.id} task={t} onUpdate={()=>{}} />)}
+
+      {/* Tasks List */}
+      <div className="flex flex-col divide-y divide-slate-800/50">
+        {loading ? (
+          <div className="text-center py-12">
+            <Loader2 className="animate-spin inline text-slate-400 mb-2" size={24} />
+            <p className="text-slate-500 text-sm mt-2">Loading tasks...</p>
+          </div>
+        ) : tasks.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-slate-400 text-sm">No tasks yet. Create your first task above!</p>
+          </div>
+        ) : (
+          tasks.map(t => <TodoItem key={t.id} task={t} onUpdate={() => {}} />)
+        )}
       </div>
     </div>
   );
 }
-

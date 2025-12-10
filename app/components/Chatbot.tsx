@@ -1,0 +1,171 @@
+"use client";
+
+import { useState, useRef, useEffect } from "react";
+import { MessageCircle, X, Send, Loader2 } from "lucide-react";
+
+type Message = {
+  role: "user" | "bot";
+  content: string;
+};
+
+export default function Chatbot() {
+  const [isOpen, setIsOpen] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [inputMessage, setInputMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (chatRef.current && !chatRef.current.contains(event.target as Node)) {
+        const target = event.target as HTMLElement;
+        if (!target.closest('button[aria-label="Open chat"]')) {
+          setIsOpen(false);
+        }
+      }
+    };
+
+    if (isOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isOpen]);
+
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputMessage.trim() || isLoading) return;
+
+    const userMessage: Message = { role: "user", content: inputMessage.trim() };
+    setMessages((prev) => [...prev, userMessage]);
+    setInputMessage("");
+    setIsLoading(true);
+
+    try {
+      const response = await fetch("/api/chat-agent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: userMessage.content }),
+      });
+
+      const data = await response.json();
+      const botMessage: Message = { role: "bot", content: data.reply || "Sorry, I couldn't process your message." };
+      setMessages((prev) => [...prev, botMessage]);
+    } catch (error) {
+      console.error("Chat error:", error);
+      const errorMessage: Message = { role: "bot", content: "Sorry, there was an error processing your request." };
+      setMessages((prev) => [...prev, errorMessage]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <>
+      {/* Floating Action Button */}
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="fixed bottom-6 right-6 w-14 h-14 bg-gradient-to-br from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white rounded-full shadow-lg shadow-blue-600/30 flex items-center justify-center transition-all hover:scale-110 active:scale-95 z-50"
+        aria-label="Open chat"
+      >
+        <MessageCircle size={24} />
+      </button>
+
+      {/* Chat Popover */}
+      {isOpen && (
+        <div
+          ref={chatRef}
+          className="fixed bottom-20 right-6 w-96 h-[500px] bg-[#0B0F19] border border-slate-800 rounded-xl shadow-2xl flex flex-col overflow-hidden z-50 animate-[fadeIn_0.2s_ease-out_forwards]"
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between p-4 border-b border-slate-800/50">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 bg-gradient-to-br from-blue-600 to-purple-600 rounded-full flex items-center justify-center">
+                <MessageCircle size={18} className="text-white" />
+              </div>
+              <div>
+                <h3 className="text-white font-semibold text-sm">AI Assistant</h3>
+                <p className="text-slate-400 text-xs">Ask me anything</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setIsOpen(false)}
+              className="text-slate-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-slate-800/50"
+              aria-label="Close chat"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          {/* Messages Area */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#0B0F19]">
+            {messages.length === 0 && (
+              <div className="text-center text-slate-400 text-sm mt-12">
+                <MessageCircle size={32} className="mx-auto mb-3 text-slate-700" />
+                <p>Start a conversation</p>
+                <p className="text-xs mt-1 text-slate-500">I'm here to help with your tasks</p>
+              </div>
+            )}
+            {messages.map((msg, idx) => (
+              <div
+                key={idx}
+                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+              >
+                <div
+                  className={`max-w-[85%] rounded-lg px-4 py-2.5 ${
+                    msg.role === "user"
+                      ? "bg-gradient-to-br from-blue-600 to-purple-600 text-white"
+                      : "bg-slate-800/50 text-slate-200 border border-slate-800/50"
+                  }`}
+                >
+                  <p className="text-sm whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                </div>
+              </div>
+            ))}
+            {isLoading && (
+              <div className="flex justify-start">
+                <div className="bg-slate-800/50 text-slate-200 rounded-lg px-4 py-2.5 flex items-center gap-2 border border-slate-800/50">
+                  <Loader2 size={14} className="animate-spin" />
+                  <span className="text-sm">Thinking...</span>
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* Input Area */}
+          <form onSubmit={handleSend} className="p-4 border-t border-slate-800/50 bg-[#0B0F19]">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={inputMessage}
+                onChange={(e) => setInputMessage(e.target.value)}
+                placeholder="Type your message..."
+                className="flex-1 bg-slate-800/30 border border-slate-800/50 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 text-sm focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 outline-none transition-all"
+                disabled={isLoading}
+              />
+              <button
+                type="submit"
+                disabled={isLoading || !inputMessage.trim()}
+                className="bg-gradient-to-br from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 disabled:from-slate-700 disabled:to-slate-700 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg transition-all flex items-center justify-center min-w-[48px]"
+              >
+                <Send size={18} />
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+    </>
+  );
+}
