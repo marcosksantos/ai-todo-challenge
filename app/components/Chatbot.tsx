@@ -73,25 +73,16 @@ export default function Chatbot() {
 
   return (
     <>
-      {/* Floating Action Button */}
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="fixed bottom-6 right-6 w-14 h-14 bg-gradient-to-br from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white rounded-full shadow-lg shadow-blue-600/30 flex items-center justify-center transition-all hover:scale-110 active:scale-95 z-50"
-        aria-label="Open chat"
-      >
-        <MessageCircle size={24} />
-      </button>
-
-      {/* Chat Popover */}
+      {/* Chat Window */}
       {isOpen && (
         <div
           ref={chatRef}
-          className="fixed bottom-20 right-6 w-96 h-[500px] bg-[#0B0F19] border border-slate-800 rounded-xl shadow-2xl flex flex-col overflow-hidden z-50 animate-[fadeIn_0.2s_ease-out_forwards]"
+          className="fixed bottom-24 right-6 w-[calc(100vw-3rem)] md:w-96 bg-[#0F172A] border border-slate-700 rounded-2xl shadow-2xl z-50 flex flex-col overflow-hidden"
         >
           {/* Header */}
-          <div className="flex items-center justify-between p-4 border-b border-slate-800/50">
+          <div className="flex items-center justify-between p-4 border-b border-slate-800/40">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 bg-gradient-to-br from-blue-600 to-purple-600 rounded-full flex items-center justify-center">
+              <div className="w-9 h-9 bg-blue-600 rounded-full flex items-center justify-center">
                 <MessageCircle size={18} className="text-white" />
               </div>
               <div>
@@ -109,7 +100,7 @@ export default function Chatbot() {
           </div>
 
           {/* Messages Area */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#0B0F19]">
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#0F172A]">
             {messages.length === 0 && (
               <div className="text-center text-slate-400 text-sm mt-12">
                 <MessageCircle size={32} className="mx-auto mb-3 text-slate-700" />
@@ -125,7 +116,7 @@ export default function Chatbot() {
                 <div
                   className={`max-w-[85%] rounded-lg px-4 py-2.5 ${
                     msg.role === "user"
-                      ? "bg-gradient-to-br from-blue-600 to-purple-600 text-white"
+                      ? "bg-blue-600 text-white"
                       : "bg-slate-800/50 text-slate-200 border border-slate-800/50"
                   }`}
                 >
@@ -145,7 +136,7 @@ export default function Chatbot() {
           </div>
 
           {/* Input Area */}
-          <form onSubmit={handleSend} className="p-4 border-t border-slate-800/50 bg-[#0B0F19]">
+          <form onSubmit={handleSend} className="p-4 border-t border-slate-800/40 bg-[#0F172A]">
             <div className="flex gap-2">
               <input
                 type="text"
@@ -158,7 +149,7 @@ export default function Chatbot() {
               <button
                 type="submit"
                 disabled={isLoading || !inputMessage.trim()}
-                className="bg-gradient-to-br from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 disabled:from-slate-700 disabled:to-slate-700 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg transition-all flex items-center justify-center min-w-[48px]"
+                className="bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg transition-all flex items-center justify-center min-w-[48px]"
               >
                 <Send size={18} />
               </button>
@@ -166,6 +157,15 @@ export default function Chatbot() {
           </form>
         </div>
       )}
+
+      {/* Floating Action Button */}
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="fixed bottom-6 right-6 h-14 w-14 bg-blue-600 rounded-full shadow-lg z-50 flex items-center justify-center text-white hover:scale-105 transition"
+        aria-label="Open chat"
+      >
+        <MessageCircle size={24} />
+      </button>
     </>
   );
 }

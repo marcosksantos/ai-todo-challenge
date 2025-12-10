@@ -6,7 +6,7 @@ Frontend: Next.js 16 (App Router)
 
 Linguagem: TypeScript
 
-Estilo: Tailwind CSS 4
+Estilo: Tailwind CSS 3.4.17 (PostCSS + Autoprefixer)
 
 Backend: Supabase (BaaS)
 
@@ -17,6 +17,8 @@ Automação: N8N (via Webhook)
 Core
 
 app/globals.css: Definições de Tailwind e temas (Dark Mode).
+postcss.config.mjs: Configuração PostCSS (Tailwind v3 + Autoprefixer).
+tailwind.config.ts: Configuração do Tailwind v3 (App Router, conteúdo em app/components).
 
 app/layout.tsx: Wrapper principal da aplicação.
 
