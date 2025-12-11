@@ -1,296 +1,227 @@
-"use client";
+'use client'
 
-import { useEffect, useState, FormEvent } from "react";
-import { supabase } from "@/lib/supabaseClient";
-import { getTasks, createTask } from "@/lib/tasks";
-import TodoItem from "./TodoItem";
-import { Bot, Loader2, Plus, LogOut, User as UserIcon, Phone, X, Save } from "lucide-react";
-import type { Task } from "@/lib/types";
-import type { User } from "@supabase/supabase-js";
+import { useState, useEffect } from 'react'
+import { createClient } from '@/utils/supabase/client'
+import { getTasks, createTask, toggleTask, editTask, deleteTask } from '@/lib/tasks'
+import TodoItem from './TodoItem'
+import { Plus, Loader2 } from 'lucide-react'
+
+// Helper function to generate IDs in non-secure contexts (HTTP)
+function generateUUID() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  // Fallback for environments where crypto is not available
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
 
 export default function TodoList() {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [newTask, setNewTask] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [user, setUser] = useState<User | null>(null);
-  const [showPhoneModal, setShowPhoneModal] = useState(false);
-  const [phoneNumber, setPhoneNumber] = useState("");
-  const [updatingPhone, setUpdatingPhone] = useState(false);
+  // Create client instance inside component
+  const supabase = createClient()
+  
+  const [tasks, setTasks] = useState<any[]>([])
+  const [newTaskTitle, setNewTaskTitle] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+  const [user, setUser] = useState<any>(null)
 
-  // Get current user
+  // 1. Auth & Initial Load
   useEffect(() => {
-    const getUser = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      setUser(user);
-      if (user) {
-        setPhoneNumber((user.user_metadata?.phone as string) || "");
+    const initData = async () => {
+      // Check active session
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (session?.user) {
+        setUser(session.user)
+        try {
+          const data = await getTasks(supabase, session.user.id)
+          setTasks(data || [])
+        } catch (e) {
+          console.error('Error fetching tasks:', e)
+        }
       }
-    };
-    getUser();
-  }, []);
-
-  // Load tasks
-  const fetchTasks = async () => {
-    if (!user) return;
-    setLoading(true);
-    try {
-      const data = await getTasks(user.id);
-      if (data) setTasks(data as Task[]);
-    } catch (error) {
-      console.error("Error fetching tasks:", error);
-    } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
 
+    initData()
+    
+    // Auth Listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        setUser(session.user) 
+      } else {
+        setUser(null)
+        setTasks([])
+      }
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
+
+  // 2. Realtime Subscription
   useEffect(() => {
-    if (user) {
-      fetchTasks();
-      // Realtime subscription with user filter
-      const channel = supabase
-        .channel("realtime:tasks")
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "tasks",
-            filter: `user_id=eq.${user.id}`,
-          },
-          (payload) => {
-            const { eventType, new: newRecord, old: oldRecord } = payload;
-            setTasks((current) => {
-              if (eventType === "INSERT") return [newRecord as Task, ...current];
-              if (eventType === "DELETE")
-                return current.filter((t) => t.id !== oldRecord.id);
-              if (eventType === "UPDATE")
-                return current.map((t) =>
-                  t.id === newRecord.id ? ({ ...newRecord } as Task) : t
-                );
-              return current;
-            });
-          }
-        )
-        .subscribe();
+    if (!user) return
 
-      return () => {
-        supabase.removeChannel(channel);
-      };
+    console.log('🔌 Connecting to Realtime for user:', user.id)
+
+    const channel = supabase
+      .channel(`realtime:tasks:${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'tasks',
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload: any) => {
+          console.log('⚡ Realtime Event:', payload)
+          const { eventType, new: newRecord, old: oldRecord } = payload
+          
+          setTasks((current) => {
+            if (eventType === 'INSERT') {
+               // Prevent duplicates from optimistic updates
+               if (current.some(t => t.id === newRecord.id)) {
+                 // Update the temporary ID with the real one if needed, or just replace
+                 return current.map(t => t.id === newRecord.id ? newRecord : t)
+               }
+               return [newRecord, ...current]
+            }
+            if (eventType === 'UPDATE') {
+              return current.map(t => t.id === newRecord.id ? { ...t, ...newRecord } : t)
+            }
+            if (eventType === 'DELETE') {
+              return current.filter(t => t.id !== oldRecord.id)
+            }
+            return current
+          })
+        }
+      )
+      .subscribe((status) => {
+        console.log('Realtime Status:', status)
+      })
+
+    return () => {
+      supabase.removeChannel(channel)
     }
-  }, [user]);
+  }, [user])
 
-  const handleAddTask = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!newTask.trim() || !user) return;
-    setSubmitting(true);
+  const handleAddTask = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newTaskTitle.trim() || !user) return
+
+    setSubmitting(true)
+    
+    // FIX: Use custom generator instead of crypto.randomUUID()
+    const tempId = generateUUID()
+    
+    // Optimistic Update
+    const optimisticTask = {
+      id: tempId,
+      title: newTaskTitle,
+      completed: false,
+      created_at: new Date().toISOString(),
+      user_id: user.id,
+      is_ai_processing: true
+    }
+
+    setTasks([optimisticTask, ...tasks])
+    setNewTaskTitle('')
 
     try {
-      const task = await createTask(newTask.trim(), user.id);
-      if (task) {
-        setTasks((prev) => [{ ...task, is_ai_processing: true } as Task, ...prev]);
-        setNewTask("");
-        // Call N8N without waiting (Fire & Forget)
-        fetch("/api/n8n-trigger", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ taskId: task.id, title: task.title }),
-        }).catch(console.error);
+      // Pass 'supabase' client to the function
+      const newTask = await createTask(supabase, newTaskTitle, user.id)
+      
+      // Trigger Automation via API Route (Auth cookies included automatically by browser)
+      if (newTask) {
+        fetch('/api/n8n-trigger', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include', // Important for cookies
+          body: JSON.stringify({
+            taskId: newTask.id,
+            title: newTask.title
+          })
+        }).catch(err => console.error('Webhook Error:', err))
       }
-    } catch (error) {
-      console.error(error);
+    } catch (error: any) {
+      console.error('FULL ERROR OBJECT:', error)
+      console.error('Error Message:', error.message)
+      console.error('Error Details:', error.details)
+      
+      // Rollback
+      setTasks(current => current.filter(t => t.id !== tempId))
+      
+      // Show specific alert
+      alert(`Failed: ${error.message || 'Unknown error'}`)
     } finally {
-      setSubmitting(false);
+      setSubmitting(false)
     }
-  };
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    window.location.href = "/auth";
-  };
-
-  const handleUpdatePhone = async () => {
-    if (!user) return;
-    setUpdatingPhone(true);
-    try {
-      const { error } = await supabase.auth.updateUser({
-        data: { phone: phoneNumber },
-      });
-      if (error) throw error;
-      setShowPhoneModal(false);
-    } catch (error) {
-      console.error("Error updating phone:", error);
-      alert("Failed to update phone number");
-    } finally {
-      setUpdatingPhone(false);
-    }
-  };
-
-  if (!user) {
-    return (
-      <div className="w-full max-w-xl mx-auto bg-[#0B1120] border border-slate-800 rounded-2xl shadow-2xl overflow-hidden mt-10 p-8 text-center">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-500 mx-auto mb-4" />
-        <p className="text-slate-400">Loading user...</p>
-      </div>
-    );
   }
 
+  // Handlers
+  const handleToggle = async (id: string, completed: boolean) => {
+    // Optimistic
+    setTasks(tasks.map(t => t.id === id ? { ...t, completed } : t))
+    await toggleTask(supabase, id, completed, user.id)
+  }
+
+  const handleEdit = async (id: string, newTitle: string) => {
+    setTasks(tasks.map(t => t.id === id ? { ...t, title: newTitle } : t))
+    await editTask(supabase, id, newTitle, user.id)
+  }
+
+  const handleDelete = async (id: string) => {
+    // Optimistic
+    setTasks(tasks.filter(t => t.id !== id))
+    await deleteTask(supabase, id, user.id)
+  }
+
+  if (loading) return <div className="flex justify-center p-12"><Loader2 className="animate-spin text-gray-400" /></div>
+
   return (
-    <>
-      <div className="w-full max-w-xl mx-auto bg-[#0B1120] border border-slate-800 rounded-2xl shadow-2xl overflow-hidden mt-10">
-        {/* Header with User Profile */}
-        <div className="p-6 border-b border-slate-800/60 bg-slate-900/30">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <Bot className="w-5 h-5 text-blue-500" />
-              <h2 className="text-xl font-bold text-white">AI Tasks</h2>
-            </div>
-            <button
-              onClick={handleLogout}
-              className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-              aria-label="Log out"
-            >
-              <LogOut className="w-5 h-5" />
-            </button>
-          </div>
+    <div className="w-full max-w-2xl mx-auto space-y-8">
+      <header className="space-y-2">
+        <h1 className="text-3xl font-bold text-white">My Tasks</h1>
+        <p className="text-gray-400">
+          Managed by AI & Realtime
+          {user && <span className="block text-xs text-gray-500 mt-1">User: {user.email}</span>}
+        </p>
+      </header>
 
-          {/* User Profile Section */}
-          <div className="flex items-center justify-between pt-4 border-t border-slate-800/40">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center">
-                <UserIcon className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-white">
-                  {user.email}
-                </p>
-                <p className="text-xs text-slate-400">
-                  {phoneNumber || "No phone number"}
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={() => setShowPhoneModal(true)}
-              className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-blue-400 hover:text-blue-300 hover:bg-blue-400/10 rounded-lg transition-colors border border-blue-400/20"
-            >
-              <Phone className="w-4 h-4" />
-              {phoneNumber ? "Update" : "Add"} Phone
-            </button>
-          </div>
-          <p className="text-sm text-slate-400 mt-2">Automated by N8N & Supabase</p>
-        </div>
+      <form onSubmit={handleAddTask} className="relative">
+        <input
+          value={newTaskTitle}
+          onChange={(e) => setNewTaskTitle(e.target.value)}
+          placeholder="New task..."
+          className="w-full bg-[#1e2029] border border-gray-700 rounded-lg px-4 py-4 pr-12 text-white focus:ring-2 focus:ring-purple-600 outline-none placeholder-gray-500"
+          disabled={submitting}
+        />
+        <button type="submit" disabled={submitting} className="absolute right-2 top-2 p-2 bg-purple-600 rounded text-white hover:bg-purple-700 transition-colors disabled:opacity-50">
+          {submitting ? <Loader2 className="animate-spin w-5 h-5"/> : <Plus size={20} />}
+        </button>
+      </form>
 
-        {/* Input Moderno */}
-        <div className="p-4 bg-slate-900/20">
-          <form
-            onSubmit={handleAddTask}
-            className="flex gap-2 items-center bg-[#030712] border border-slate-700 rounded-xl p-1 focus-within:ring-2 focus-within:ring-blue-600/50 transition-all"
-          >
-            <input
-              type="text"
-              value={newTask}
-              onChange={(e) => setNewTask(e.target.value)}
-              placeholder="Add a new task (e.g. 'buy coffee')..."
-              className="flex-1 bg-transparent border-none text-white px-4 py-2 focus:outline-none text-sm placeholder:text-slate-600"
-              disabled={submitting}
+      <div className="space-y-3">
+        {tasks.length === 0 ? (
+          <div className="text-center py-8 text-gray-500 border border-dashed border-gray-800 rounded-lg">
+            No tasks yet. Add one to start!
+          </div>
+        ) : (
+          tasks.map(task => (
+            <TodoItem 
+              key={task.id} 
+              task={task} 
+              onToggle={handleToggle} 
+              onEdit={handleEdit} 
+              onDelete={handleDelete} 
             />
-            <button
-              type="submit"
-              disabled={submitting}
-              className="bg-blue-600 hover:bg-blue-500 text-white p-2 rounded-lg transition-colors disabled:opacity-50"
-            >
-              {submitting ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : (
-                <Plus className="w-5 h-5" />
-              )}
-            </button>
-          </form>
-        </div>
-
-        {/* Lista Limpa */}
-        <div className="divide-y divide-slate-800/50 max-h-[60vh] overflow-y-auto">
-          {loading ? (
-            <div className="p-8 text-center text-slate-500 flex justify-center">
-              <Loader2 className="animate-spin" />
-            </div>
-          ) : tasks.length === 0 ? (
-            <div className="p-12 text-center text-slate-600">
-              <p>No tasks yet.</p>
-            </div>
-          ) : (
-            tasks.map((task) => (
-              <TodoItem
-                key={task.id}
-                task={task}
-                onUpdate={fetchTasks}
-                userId={user.id}
-              />
-            ))
-          )}
-        </div>
+          ))
+        )}
       </div>
-
-      {/* Phone Number Update Modal */}
-      {showPhoneModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-[#0B1120] border border-slate-800 rounded-2xl shadow-2xl w-full max-w-md p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <Phone className="w-5 h-5 text-blue-500" />
-                {phoneNumber ? "Update" : "Add"} Phone Number
-              </h3>
-              <button
-                onClick={() => setShowPhoneModal(false)}
-                className="text-slate-400 hover:text-white transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <p className="text-sm text-slate-400 mb-4">
-              Add your phone number for WhatsApp integration
-            </p>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Phone Number
-                </label>
-                <input
-                  type="tel"
-                  value={phoneNumber}
-                  onChange={(e) => setPhoneNumber(e.target.value)}
-                  placeholder="+1234567890"
-                  className="w-full bg-[#030712] border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
-                />
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={handleUpdatePhone}
-                  disabled={updatingPhone}
-                  className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
-                >
-                  {updatingPhone ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                  ) : (
-                    <>
-                      <Save className="w-5 h-5" />
-                      Save
-                    </>
-                  )}
-                </button>
-                <button
-                  onClick={() => setShowPhoneModal(false)}
-                  className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-medium rounded-lg transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
-  );
+    </div>
+  )
 }

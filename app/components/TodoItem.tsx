@@ -2,16 +2,16 @@
 
 import { useState } from "react";
 import { Check, Edit2, Trash2, Save, X, Sparkles } from "lucide-react";
-import { toggleTask, editTask, deleteTask } from "@/lib/tasks";
 import type { Task } from "@/lib/types";
 
 interface TodoItemProps {
   task: Task;
-  onUpdate: () => void;
-  userId: string;
+  onToggle: (id: string, completed: boolean) => void;
+  onEdit: (id: string, newTitle: string) => void;
+  onDelete: (id: string) => void;
 }
 
-export default function TodoItem({ task, onUpdate, userId }: TodoItemProps) {
+export default function TodoItem({ task, onToggle, onEdit, onDelete }: TodoItemProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(task.title);
   const [isLoading, setIsLoading] = useState(false);
@@ -24,22 +24,14 @@ export default function TodoItem({ task, onUpdate, userId }: TodoItemProps) {
 
     const newCompleted = !optimisticCompleted;
     setOptimisticCompleted(newCompleted); // Optimistic update
-
-    try {
-      await toggleTask(task.id, newCompleted, userId);
-      onUpdate(); // Sync with parent
-    } catch (error) {
-      console.error("Error toggling task:", error);
-      setOptimisticCompleted(!newCompleted); // Revert on error
-    }
+    onToggle(task.id, newCompleted);
   };
 
   const handleDelete = async () => {
     if (!confirm("Delete this task?")) return;
     setIsLoading(true);
     try {
-      await deleteTask(task.id, userId);
-      onUpdate();
+      onDelete(task.id);
     } catch (error) {
       console.error("Error deleting task:", error);
     } finally {
@@ -54,8 +46,7 @@ export default function TodoItem({ task, onUpdate, userId }: TodoItemProps) {
     }
     setIsLoading(true);
     try {
-      await editTask(task.id, editText.trim(), userId);
-      onUpdate();
+      onEdit(task.id, editText.trim());
       setIsEditing(false);
     } catch (error) {
       console.error("Error editing task:", error);

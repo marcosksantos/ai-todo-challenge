@@ -2,7 +2,7 @@
 
 import { useState, FormEvent, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
+import { createClient } from '@/utils/supabase/client'
 import { Mail, Lock, Phone, Loader2, LogIn, UserPlus } from "lucide-react";
 
 type AuthMode = "signin" | "signup";
@@ -10,6 +10,7 @@ type AuthMode = "signin" | "signup";
 function AuthPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const supabase = createClient();
   const [mode, setMode] = useState<AuthMode>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
+import { createClient } from "@/utils/supabase/client";
 import { Loader2 } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 
@@ -12,6 +12,7 @@ interface AuthGuardProps {
 
 export default function AuthGuard({ children }: AuthGuardProps) {
   const router = useRouter();
+  const supabase = createClient();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 

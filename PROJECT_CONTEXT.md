@@ -32,11 +32,15 @@ TodoList.tsx: Componente "pai". Gerencia o estado, busca dados iniciais e escuta
 
 TodoItem.tsx: Componente "filho". Renderiza cada tarefa e botões de ação (editar/excluir).
 
-Bibliotecas e Utilitários (Localização: /lib/)
+Bibliotecas e Utilitários
 
-supabaseClient.ts: Inicializa a conexão com o Supabase usando variáveis de ambiente.
+/lib/tasks.ts: Contém TODAS as funções de banco de dados (getTasks, createTask, toggleTask, editTask, deleteTask). Agora aceita o cliente Supabase como parâmetro para ser SSR-safe.
 
-tasks.ts: Contém TODAS as funções de banco de dados (getTasks, createTask, updateTask, deleteTask).
+/utils/supabase/client.ts: Cria cliente Supabase para uso no browser (Client Components).
+
+/utils/supabase/server.ts: Cria cliente Supabase para uso no servidor (Server Components e Route Handlers).
+
+/middleware.ts: Middleware Next.js que gerencia sessões e cookies do Supabase. Exclui /auth/callback para evitar quebra do PKCE.
 
 API Backend (Localização: /app/api/)
 
