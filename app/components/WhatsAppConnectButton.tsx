@@ -1,0 +1,227 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { createClient } from "@/utils/supabase/client";
+import { X, Loader2, MessageCircle } from "lucide-react";
+
+export default function WhatsAppConnectButton() {
+  const supabase = createClient();
+  const [user, setUser] = useState<any>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [phone, setPhone] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const getUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setUser(user);
+      }
+    };
+    getUser();
+  }, [supabase]);
+
+  // Sanitize phone number: remove all non-numeric characters
+  const sanitizePhone = (input: string): string => {
+    return input.replace(/\D/g, "");
+  };
+
+  // Validate phone number
+  const validatePhone = (phoneNumber: string): boolean => {
+    const sanitized = sanitizePhone(phoneNumber);
+    // Minimum 10 digits (US format), but allow international numbers (up to 15 digits)
+    return sanitized.length >= 10 && sanitized.length <= 15;
+  };
+
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setPhone(value);
+    // Clear error when user starts typing
+    if (error) {
+      setError("");
+    }
+  };
+
+  const handleSaveAndConnect = async () => {
+    // Reset error
+    setError("");
+
+    // Validate input
+    if (!phone.trim()) {
+      setError("Please enter a valid number with country code");
+      return;
+    }
+
+    const sanitizedPhone = sanitizePhone(phone);
+    
+    if (!validatePhone(sanitizedPhone)) {
+      setError("Please enter a valid number with country code (10-15 digits)");
+      return;
+    }
+
+    if (!user) {
+      setError("User not authenticated");
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      // Update profiles table with sanitized phone number
+      const { error: updateError } = await supabase
+        .from("profiles")
+        .upsert(
+          {
+            id: user.id,
+            phone: sanitizedPhone,
+            updated_at: new Date().toISOString(),
+          },
+          {
+            onConflict: "id",
+          }
+        );
+
+      if (updateError) {
+        // If profiles table doesn't exist or has different structure, try insert first
+        const { error: insertError } = await supabase
+          .from("profiles")
+          .insert({
+            id: user.id,
+            phone: sanitizedPhone,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+
+        if (insertError) {
+          console.error("Error saving phone:", insertError);
+          setError(`Failed to save phone number: ${insertError.message}`);
+          setIsLoading(false);
+          return;
+        }
+      }
+
+      // Success: Close modal and open WhatsApp
+      setIsModalOpen(false);
+      setPhone("");
+      setError("");
+
+      // Open WhatsApp Web with pre-filled message
+      const whatsappMessage = encodeURIComponent(
+        "Hi! I just connected my account. #to-do list Buy coffee"
+      );
+      const whatsappUrl = `https://wa.me/5522992737876?text=${whatsappMessage}`;
+      window.open(whatsappUrl, "_blank");
+    } catch (error: any) {
+      console.error("Error:", error);
+      setError(`Error: ${error.message || "Failed to save phone number"}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setPhone("");
+    setError("");
+  };
+
+  if (!user) return null;
+
+  const isPhoneInvalid = phone.trim() !== "" && !validatePhone(phone);
+
+  return (
+    <>
+      {/* Floating Action Button */}
+      <button
+        onClick={() => setIsModalOpen(true)}
+        className="fixed bottom-6 right-6 h-14 w-14 bg-green-500 hover:bg-green-600 rounded-full shadow-lg z-50 flex items-center justify-center text-white hover:scale-105 transition-all duration-200"
+        aria-label="Connect WhatsApp"
+        title="Connect WhatsApp"
+      >
+        <MessageCircle className="w-7 h-7" />
+      </button>
+
+      {/* Modal Overlay */}
+      {isModalOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4"
+          onClick={handleCloseModal}
+        >
+          {/* Modal Content */}
+          <div
+            className="bg-gray-900 border border-gray-700 rounded-lg shadow-2xl w-full max-w-md p-6 relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Close Button */}
+            <button
+              onClick={handleCloseModal}
+              className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors"
+              aria-label="Close modal"
+            >
+              <X size={20} />
+            </button>
+
+            {/* Modal Header */}
+            <h2 className="text-xl font-semibold text-white mb-6 pr-8">
+              Connect your WhatsApp
+            </h2>
+
+            {/* Phone Input */}
+            <div className="space-y-2 mb-6">
+              <label
+                htmlFor="phone-input"
+                className="block text-sm font-medium text-gray-300"
+              >
+                Phone Number
+              </label>
+              <input
+                id="phone-input"
+                type="tel"
+                value={phone}
+                onChange={handlePhoneChange}
+                placeholder="1 (555) 123-4567"
+                className={`w-full bg-gray-800 border rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 transition-all ${
+                  isPhoneInvalid
+                    ? "border-red-500 focus:ring-red-500/50 focus:border-red-500"
+                    : "border-gray-700 focus:ring-green-500/50 focus:border-green-500"
+                }`}
+                disabled={isLoading}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !isLoading && !isPhoneInvalid) {
+                    handleSaveAndConnect();
+                  }
+                }}
+              />
+              <p className="text-xs text-gray-500">
+                Enter your number with Country Code (DDI).
+              </p>
+              
+              {/* Error Message */}
+              {error && (
+                <p className="text-sm text-red-500 mt-1">{error}</p>
+              )}
+            </div>
+
+            {/* Action Button */}
+            <button
+              onClick={handleSaveAndConnect}
+              disabled={isLoading || !phone.trim() || isPhoneInvalid}
+              className="w-full bg-green-500 hover:bg-green-600 disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-medium py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span>Connecting...</span>
+                </>
+              ) : (
+                <span>Save & Connect</span>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+

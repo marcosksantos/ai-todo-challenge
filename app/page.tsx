@@ -1,5 +1,6 @@
 import TodoList from "@/app/components/TodoList";
 import Chatbot from "@/app/components/Chatbot";
+import WhatsAppButton from "@/app/components/WhatsAppButton";
 import AuthGuard from "@/app/components/AuthGuard";
 
 export default function Home() {
@@ -21,6 +22,9 @@ export default function Home() {
 
         {/* Floating Chat */}
         <Chatbot />
+
+        {/* WhatsApp Connect Button */}
+        <WhatsAppButton />
       </main>
     </AuthGuard>
   );
