@@ -49,6 +49,16 @@ export async function editTask(supabase: SupabaseClient, id: string, title: stri
   if (error) throw error
 }
 
+export async function updateTaskDescription(supabase: SupabaseClient, id: string, description: string, userId: string) {
+  const { error } = await supabase
+    .from('tasks')
+    .update({ description })
+    .eq('id', id)
+    .eq('user_id', userId)
+
+  if (error) throw error
+}
+
 export async function deleteTask(supabase: SupabaseClient, id: string, userId: string) {
   const { error } = await supabase
     .from('tasks')

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/utils/supabase/client'
-import { getTasks, createTask, toggleTask, editTask, deleteTask } from '@/lib/tasks'
+import { getTasks, createTask, toggleTask, editTask, deleteTask, updateTaskDescription } from '@/lib/tasks'
 import TodoItem from './TodoItem'
 import { Plus, Loader2, Wifi, WifiOff, LogOut } from 'lucide-react'
 import { useRouter } from 'next/navigation'
@@ -27,6 +27,8 @@ export default function TodoList() {
   const [submitting, setSubmitting] = useState(false)
   const [user, setUser] = useState<any>(null)
   const [realtimeStatus, setRealtimeStatus] = useState('disconnected')
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null)
+  const [editingTaskIds, setEditingTaskIds] = useState<Set<string>>(new Set())
 
   // 1. Initialize: Authenticate user and load initial tasks
   useEffect(() => {
@@ -94,6 +96,12 @@ export default function TodoList() {
             // Update the specific task in local state
             return current.map(task => {
               if (task.id === updatedTask.id) {
+                // Don't overwrite if user is currently editing this task
+                if (editingTaskIds.has(updatedTask.id)) {
+                  console.log('⏸️ Skipping Realtime update - user is editing task:', updatedTask.id)
+                  return task
+                }
+                
                 // If title changed (AI update), remove processing indicator
                 const titleChanged = task.title !== updatedTask.title
                 return { 
@@ -133,7 +141,7 @@ export default function TodoList() {
       console.log('🔌 Disconnecting from Realtime...')
       supabase.removeChannel(channel)
     }
-  }, [user, supabase])
+  }, [user, supabase, editingTaskIds])
 
   const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -196,10 +204,51 @@ export default function TodoList() {
   }
 
   const handleEdit = async (id: string, newTitle: string) => {
+    // Mark as editing to protect from Realtime overwrites
+    setEditingTaskIds(prev => new Set(prev).add(id))
+    
     // Optimistic update: Update UI immediately
     setTasks(tasks.map(t => t.id === id ? { ...t, title: newTitle } : t))
-    // Persist to database (Realtime will confirm the update)
-    await editTask(supabase, id, newTitle, user.id)
+    
+    try {
+      // Persist to database (Realtime will confirm the update)
+      await editTask(supabase, id, newTitle, user.id)
+    } finally {
+      // Remove from editing set after a short delay to allow Realtime to sync
+      setTimeout(() => {
+        setEditingTaskIds(prev => {
+          const next = new Set(prev)
+          next.delete(id)
+          return next
+        })
+      }, 1000)
+    }
+  }
+
+  const handleEditDescription = async (id: string, description: string) => {
+    // Mark as editing to protect from Realtime overwrites
+    setEditingTaskIds(prev => new Set(prev).add(id))
+    
+    // Optimistic update: Update UI immediately
+    setTasks(tasks.map(t => t.id === id ? { ...t, description } : t))
+    
+    try {
+      // Persist to database
+      await updateTaskDescription(supabase, id, description, user.id)
+    } finally {
+      // Remove from editing set after a short delay
+      setTimeout(() => {
+        setEditingTaskIds(prev => {
+          const next = new Set(prev)
+          next.delete(id)
+          return next
+        })
+      }, 1000)
+    }
+  }
+
+  const handleToggleExpand = (taskId: string) => {
+    setExpandedTaskId(prev => prev === taskId ? null : taskId)
   }
 
   const handleDelete = async (id: string) => {
@@ -270,8 +319,11 @@ export default function TodoList() {
             key={task.id} 
             task={task} 
             onToggle={handleToggle} 
-            onEdit={handleEdit} 
-            onDelete={handleDelete} 
+            onEdit={handleEdit}
+            onEditDescription={handleEditDescription}
+            onDelete={handleDelete}
+            isExpanded={expandedTaskId === task.id}
+            onToggleExpand={() => handleToggleExpand(task.id)}
           />
         ))}
       </div>

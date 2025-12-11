@@ -1,21 +1,51 @@
 "use client";
 
-import { useState } from "react";
-import { Check, Edit2, Trash2, Save, X, Sparkles } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Check, Save, X, Sparkles, ChevronDown, Trash2 } from "lucide-react";
 import type { Task } from "@/lib/types";
 
 interface TodoItemProps {
   task: Task;
   onToggle: (id: string, completed: boolean) => void;
   onEdit: (id: string, newTitle: string) => void;
+  onEditDescription: (id: string, description: string) => void;
   onDelete: (id: string) => void;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
 }
 
-export default function TodoItem({ task, onToggle, onEdit, onDelete }: TodoItemProps) {
-  const [isEditing, setIsEditing] = useState(false);
+export default function TodoItem({ 
+  task, 
+  onToggle, 
+  onEdit, 
+  onEditDescription,
+  onDelete,
+  isExpanded,
+  onToggleExpand
+}: TodoItemProps) {
   const [editText, setEditText] = useState(task.title);
+  const [editDescription, setEditDescription] = useState(task.description || '');
   const [isLoading, setIsLoading] = useState(false);
   const [optimisticCompleted, setOptimisticCompleted] = useState(task.completed);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Sync description when task updates from Realtime
+  useEffect(() => {
+    setEditDescription(task.description || '');
+  }, [task.description]);
+
+  // Sync title when task updates from Realtime
+  useEffect(() => {
+    setEditText(task.title);
+  }, [task.title]);
+
+  // Auto-resize textarea
+  useEffect(() => {
+    if (isExpanded && textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+    }
+  }, [isExpanded, editDescription]);
 
   // Optimistic UI: Toggle visual state immediately, then sync with Supabase
   const handleToggle = async (e: React.MouseEvent) => {
@@ -40,138 +70,235 @@ export default function TodoItem({ task, onToggle, onEdit, onDelete }: TodoItemP
   };
 
   const handleSave = async () => {
-    if (editText.trim() === task.title) {
-      setIsEditing(false);
+    if (editText.trim() === task.title && editDescription.trim() === (task.description || '')) {
+      onToggleExpand();
       return;
     }
     setIsLoading(true);
     try {
-      onEdit(task.id, editText.trim());
-      setIsEditing(false);
+      if (editText.trim() !== task.title) {
+        await onEdit(task.id, editText.trim());
+      }
+      if (editDescription.trim() !== (task.description || '')) {
+        await onEditDescription(task.id, editDescription.trim());
+      }
+      onToggleExpand();
     } catch (error) {
-      console.error("Error editing task:", error);
+      console.error("Error saving task:", error);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleCancel = () => {
+    setEditText(task.title);
+    setEditDescription(task.description || '');
+    onToggleExpand();
   };
 
   const displayCompleted = optimisticCompleted;
 
   return (
     <div
-      className={`group flex items-center gap-3 p-4 border-b border-slate-800/50 transition-all duration-200 hover:bg-slate-800/20 ${
-        displayCompleted ? "opacity-60 bg-slate-900/20" : ""
+      className={`group border border-slate-800/50 rounded-lg transition-all duration-300 overflow-hidden ${
+        displayCompleted ? "opacity-60" : ""
+      } ${
+        isExpanded 
+          ? "bg-slate-800/40 shadow-lg" 
+          : "bg-slate-900/30 hover:bg-slate-800/20"
       }`}
     >
-      {/* Entire left side clickable area (checkbox + text) */}
-      <div
-        onClick={handleToggle}
-        className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
-      >
-        {/* Checkbox with rounded-full border-2 */}
-        <div className="flex-shrink-0">
+      {/* Collapsed State: Single line with checkbox, title, expand icon */}
+      {!isExpanded ? (
+        <div 
+          className="flex items-center gap-3 px-4 py-3 cursor-pointer"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (e.target === e.currentTarget || (e.target as HTMLElement).closest('button')?.ariaLabel === 'Expand') {
+              onToggleExpand();
+            }
+          }}
+        >
+          {/* Checkbox */}
           <div
-            className={`h-6 w-6 rounded-full border-2 flex items-center justify-center transition-all duration-300 ${
-              displayCompleted
-                ? "bg-green-500 border-green-500 shadow-[0_0_10px_rgba(34,197,94,0.4)]"
-                : "border-slate-500 group-hover:border-blue-400"
-            }`}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleToggle(e);
+            }}
+            className="flex-shrink-0 cursor-pointer"
           >
-            {displayCompleted && (
-              <Check className="w-3.5 h-3.5 text-[#020617]" strokeWidth={4} />
+            <div
+              className={`h-5 w-5 rounded-full border-2 flex items-center justify-center transition-all duration-300 ${
+                displayCompleted
+                  ? "bg-green-500 border-green-500 shadow-[0_0_8px_rgba(34,197,94,0.3)]"
+                  : "border-slate-500 group-hover:border-blue-400"
+              }`}
+            >
+              {displayCompleted && (
+                <Check className="w-3 h-3 text-[#020617]" strokeWidth={4} />
+              )}
+            </div>
+          </div>
+
+          {/* Title */}
+          <div 
+            className="flex-1 min-w-0"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleExpand();
+            }}
+          >
+            <span
+              className={`text-sm md:text-base select-none transition-colors ${
+                displayCompleted
+                  ? "text-slate-500 line-through decoration-slate-600"
+                  : "text-slate-200"
+              }`}
+            >
+              {task.title}
+            </span>
+            {/* AI Badge */}
+            {task.is_ai_processing && (
+              <div className="flex items-center gap-1.5 mt-1 animate-pulse">
+                <Sparkles className="w-3 h-3 text-purple-400" />
+                <span className="text-[10px] font-medium uppercase tracking-wider text-purple-400">
+                  AI Optimizing...
+                </span>
+              </div>
             )}
           </div>
+
+          {/* Expand Icon - Always visible */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleExpand();
+            }}
+            className="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-blue-400/10 rounded-lg transition-colors flex-shrink-0"
+            aria-label="Expand"
+          >
+            <ChevronDown className="w-4 h-4" />
+          </button>
         </div>
-
-        {/* Content area */}
-        <div className="flex-1 min-w-0 flex flex-col gap-1">
-          {isEditing ? (
-            <div className="flex items-center gap-2">
-              <input
-                value={editText}
-                onChange={(e) => setEditText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSave();
-                  if (e.key === "Escape") setIsEditing(false);
-                }}
-                className="flex-1 bg-slate-950 border border-blue-500/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                autoFocus
-              />
-              <button
+      ) : (
+        /* Expanded State: Full card with editable title, notes, and actions */
+        <div className="flex flex-col p-5 space-y-4">
+          {/* Header with collapse button */}
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-3">
+              {/* Checkbox in expanded state */}
+              <div
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleSave();
+                  handleToggle(e);
                 }}
-                className="p-2 bg-green-500/10 text-green-400 rounded-lg hover:bg-green-500/20 transition-colors"
-                aria-label="Save"
+                className="flex-shrink-0 cursor-pointer"
               >
-                <Save className="w-4 h-4" />
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsEditing(false);
-                  setEditText(task.title);
-                }}
-                className="p-2 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500/20 transition-colors"
-                aria-label="Cancel"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          ) : (
-            <>
-              <span
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (!displayCompleted) setIsEditing(true);
-                }}
-                className={`text-sm md:text-base select-none transition-colors ${
-                  displayCompleted
-                    ? "text-slate-500 line-through decoration-slate-600"
-                    : "text-slate-200 cursor-text"
-                }`}
-              >
-                {task.title}
-              </span>
-
-              {/* AI Badge with pulsing animation */}
+                <div
+                  className={`h-5 w-5 rounded-full border-2 flex items-center justify-center transition-all duration-300 ${
+                    displayCompleted
+                      ? "bg-green-500 border-green-500 shadow-[0_0_8px_rgba(34,197,94,0.3)]"
+                      : "border-slate-500 hover:border-blue-400"
+                  }`}
+                >
+                  {displayCompleted && (
+                    <Check className="w-3 h-3 text-[#020617]" strokeWidth={4} />
+                  )}
+                </div>
+              </div>
+              {/* AI Badge */}
               {task.is_ai_processing && (
-                <div className="flex items-center gap-1.5 w-fit animate-pulse">
+                <div className="flex items-center gap-1.5 animate-pulse">
                   <Sparkles className="w-3 h-3 text-purple-400" />
                   <span className="text-[10px] font-medium uppercase tracking-wider text-purple-400">
                     AI Optimizing...
                   </span>
                 </div>
               )}
-            </>
-          )}
-        </div>
-      </div>
+            </div>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleCancel();
+              }}
+              className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 rounded-lg transition-colors"
+              aria-label="Collapse"
+            >
+              <ChevronDown className="w-4 h-4" />
+            </button>
+          </div>
 
-      {/* Action buttons (hidden on mobile until hover, visible on desktop hover) */}
-      {!isEditing && (
-        <div className="flex gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex-shrink-0">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setIsEditing(true);
-            }}
-            className="p-2 text-slate-400 hover:text-blue-400 hover:bg-blue-400/10 rounded-lg transition-colors"
-            aria-label="Edit task"
-          >
-            <Edit2 className="w-4 h-4" />
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleDelete();
-            }}
-            className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
-            aria-label="Delete task"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          {/* Top: Editable Title */}
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+              Task Title
+            </label>
+            <input
+              value={editText}
+              onChange={(e) => setEditText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") handleCancel();
+              }}
+              className="w-full bg-slate-950/50 border border-slate-700/50 rounded-lg px-4 py-3 text-base font-semibold text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
+              placeholder="Enter task title..."
+              autoFocus
+            />
+          </div>
+
+          {/* Middle: Notes/Description Textarea */}
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+              {task.description ? "AI Suggestions" : "Notes"}
+            </label>
+            <textarea
+              ref={textareaRef}
+              value={editDescription}
+              onChange={(e) => {
+                setEditDescription(e.target.value);
+                // Auto-resize
+                if (textareaRef.current) {
+                  textareaRef.current.style.height = 'auto';
+                  textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") handleCancel();
+                // Allow Ctrl/Cmd + Enter to save
+                if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+                  e.preventDefault();
+                  handleSave();
+                }
+              }}
+              placeholder={task.description ? "AI-generated suggestions will appear here..." : "Add notes or details about this task..."}
+              className="w-full bg-slate-950/50 border border-slate-700/50 rounded-lg px-4 py-3 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 resize-none min-h-[120px] transition-all placeholder:text-slate-500"
+            />
+          </div>
+
+          {/* Bottom: Action Buttons */}
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800/50">
+            <button
+              onClick={handleCancel}
+              className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 rounded-lg transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleDelete}
+              disabled={isLoading}
+              className="px-4 py-2 text-sm font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50"
+            >
+              <Trash2 className="w-4 h-4" />
+              Delete
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={isLoading || (editText.trim() === task.title && editDescription.trim() === (task.description || ''))}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Save className="w-4 h-4" />
+              Save
+            </button>
+          </div>
         </div>
       )}
     </div>

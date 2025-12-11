@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { MessageCircle, X, Send, Loader2 } from "lucide-react";
+import { createClient } from "@/utils/supabase/client";
 
 type Message = {
   role: "user" | "bot";
@@ -9,16 +10,29 @@ type Message = {
 };
 
 export default function Chatbot() {
+  const supabase = createClient();
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [user, setUser] = useState<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
+
+  // Get current user on mount
+  useEffect(() => {
+    const getUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setUser(user);
+      }
+    };
+    getUser();
+  }, [supabase]);
 
   useEffect(() => {
     scrollToBottom();
@@ -45,7 +59,7 @@ export default function Chatbot() {
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputMessage.trim() || isLoading) return;
+    if (!inputMessage.trim() || isLoading || !user) return;
 
     const userMessage: Message = { role: "user", content: inputMessage.trim() };
     setMessages((prev) => [...prev, userMessage]);
@@ -53,18 +67,39 @@ export default function Chatbot() {
     setIsLoading(true);
 
     try {
-      const response = await fetch("/api/chat-agent", {
+      const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userMessage.content }),
+        body: JSON.stringify({ 
+          message: userMessage.content,
+          user_id: user.id 
+        }),
       });
 
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+      }
+
       const data = await response.json();
-      const botMessage: Message = { role: "bot", content: data.reply || "Sorry, I couldn't process your message." };
+      
+      // Handle different response formats from N8N
+      // N8N might return { reply: "..." } or { message: "..." } or just a string
+      const botReply = data.reply || data.message || data.text || JSON.stringify(data);
+      
+      const botMessage: Message = { 
+        role: "bot", 
+        content: typeof botReply === 'string' ? botReply : "Sorry, I couldn't process your message." 
+      };
       setMessages((prev) => [...prev, botMessage]);
     } catch (error) {
       console.error("Chat error:", error);
-      const errorMessage: Message = { role: "bot", content: "Sorry, there was an error processing your request." };
+      const errorMessage: Message = { 
+        role: "bot", 
+        content: error instanceof Error 
+          ? `Sorry, there was an error: ${error.message}` 
+          : "Sorry, there was an error processing your request." 
+      };
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
