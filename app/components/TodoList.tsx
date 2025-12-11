@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import { getTasks, createTask, toggleTask, editTask, deleteTask } from '@/lib/tasks'
 import TodoItem from './TodoItem'
 import { Plus, Loader2, Wifi, WifiOff } from 'lucide-react'
 
-// Helper for HTTP environments (IP address)
+// Helper for generating temporary IDs for optimistic updates
 function generateUUID() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID();
@@ -26,7 +26,7 @@ export default function TodoList() {
   const [user, setUser] = useState<any>(null)
   const [realtimeStatus, setRealtimeStatus] = useState('disconnected')
 
-  // 1. Auth & Data Load
+  // 1. Initialize: Authenticate user and load initial tasks
   useEffect(() => {
     const initData = async () => {
       const { data: { user } } = await supabase.auth.getUser()
@@ -40,188 +40,170 @@ export default function TodoList() {
     initData()
   }, [])
 
-  // 2. Realtime Connection (Robust Refetch Strategy)
+  // 2. Realtime Subscription: Listen for INSERT, UPDATE, DELETE events
   useEffect(() => {
     if (!user) return
 
-    console.log('🔌 Connecting Realtime...', user.id)
+    console.log('🔌 Connecting to Realtime...', user.id)
+    
     const channel = supabase
       .channel(`realtime:tasks:${user.id}`)
       .on(
         'postgres_changes',
         {
-          event: '*',
+          event: 'INSERT',
           schema: 'public',
           table: 'tasks',
           filter: `user_id=eq.${user.id}`,
         },
-        async (payload: any) => {
-          console.log('⚡ Realtime Event received:', payload)
+        (payload: any) => {
+          console.log('➕ INSERT event:', payload.new)
+          const newTask = payload.new
           
-          // DEADLINE FIX: Brute-force refresh to guarantee UI matches DB
-          // This solves ID mismatches and kills the 'spinner' automatically
-          const freshTasks = await getTasks(supabase, user.id)
-          setTasks(freshTasks || [])
+          setTasks(current => {
+            // Check if task already exists (from optimistic update)
+            const exists = current.find(t => t.id === newTask.id)
+            if (exists) {
+              // Replace optimistic task with real data, preserve is_ai_processing if set
+              return current.map(t => 
+                t.id === newTask.id 
+                  ? { ...newTask, is_ai_processing: t.is_ai_processing }
+                  : t
+              )
+            }
+            // Add new task at the beginning (most recent first)
+            return [newTask, ...current]
+          })
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'tasks',
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload: any) => {
+          console.log('✏️ UPDATE event:', payload.new)
+          const updatedTask = payload.new
+          
+          setTasks(current => {
+            // Update the specific task in local state
+            return current.map(task => {
+              if (task.id === updatedTask.id) {
+                // If title changed (AI update), remove processing indicator
+                const titleChanged = task.title !== updatedTask.title
+                return { 
+                  ...updatedTask, 
+                  // Clear is_ai_processing when title is updated by AI
+                  is_ai_processing: titleChanged ? false : (task.is_ai_processing || false)
+                }
+              }
+              return task
+            })
+          })
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'tasks',
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload: any) => {
+          console.log('🗑️ DELETE event:', payload.old)
+          const deletedId = payload.old.id
+          
+          setTasks(current => current.filter(task => task.id !== deletedId))
         }
       )
       .subscribe((status) => {
-        // Only log important status changes (not every error)
         if (status === 'SUBSCRIBED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          console.log('📡 Realtime STATUS:', status)
+          console.log('📡 Realtime status:', status)
         }
         setRealtimeStatus(status)
       })
 
     return () => {
+      console.log('🔌 Disconnecting from Realtime...')
       supabase.removeChannel(channel)
     }
-  }, [user])
-
-  // 3. Fallback: Polling (Safety Net for broken WebSockets)
-  useEffect(() => {
-    if (!user) return
-
-    console.log('🔄 Polling started for user:', user.id)
-
-    const interval = setInterval(async () => {
-      // Only fetch if we are not currently submitting/editing to avoid jitter
-      if (!submitting) {
-        try {
-          const freshTasks = await getTasks(supabase, user.id)
-          
-          if (freshTasks && Array.isArray(freshTasks)) {
-            setTasks(current => {
-              // Create maps for efficient comparison
-              const currentMap = new Map(current.map(t => [t.id, { title: t.title, completed: t.completed }]))
-              const freshMap = new Map(freshTasks.map(t => [t.id, { title: t.title, completed: t.completed }]))
-              
-              // Check for changes in existing tasks (especially title changes from N8N)
-              let hasChanges = false
-              let changeDetails: any[] = []
-              
-              for (const [id, freshData] of freshMap.entries()) {
-                const currentData = currentMap.get(id)
-                if (!currentData) {
-                  hasChanges = true
-                  changeDetails.push({ id, type: 'new', data: freshData })
-                } else if (currentData.title !== freshData.title) {
-                  hasChanges = true
-                  changeDetails.push({ 
-                    id, 
-                    type: 'title_change', 
-                    old: currentData.title, 
-                    new: freshData.title 
-                  })
-                } else if (currentData.completed !== freshData.completed) {
-                  hasChanges = true
-                  changeDetails.push({ 
-                    id, 
-                    type: 'completion_change', 
-                    old: currentData.completed, 
-                    new: freshData.completed 
-                  })
-                }
-              }
-              
-              // Check for removed tasks
-              for (const [id] of currentMap.entries()) {
-                if (!freshMap.has(id)) {
-                  hasChanges = true
-                  changeDetails.push({ id, type: 'removed' })
-                }
-              }
-              
-              if (hasChanges) {
-                console.log('🔄 Polling detected changes:', changeDetails)
-                // Merge: Keep optimistic updates (is_ai_processing) but update with fresh data
-                const merged = freshTasks.map(fresh => {
-                  const optimistic = current.find(c => c.id === fresh.id)
-                  return optimistic && optimistic.is_ai_processing 
-                    ? { ...fresh, is_ai_processing: optimistic.is_ai_processing }
-                    : fresh
-                })
-                return merged
-              }
-              
-              return current
-            })
-          }
-        } catch (error) {
-          console.error('❌ Polling error:', error)
-        }
-      }
-    }, 3000) // Poll every 3 seconds
-
-    return () => {
-      console.log('🔄 Polling stopped')
-      clearInterval(interval)
-    }
-  }, [user, submitting, supabase])
+  }, [user, supabase])
 
   const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newTaskTitle.trim() || !user) return
 
     setSubmitting(true)
-    const tempId = generateUUID() // Temporary ID for UI
+    const tempId = generateUUID()
     
-    // 1. Optimistic Add (Show immediately)
+    // Optimistic update: Show task immediately with loading indicator
     const optimisticTask = {
       id: tempId,
       title: newTaskTitle,
       completed: false,
       created_at: new Date().toISOString(),
       user_id: user.id,
-      is_ai_processing: true // Start Spinner
+      is_ai_processing: true // Show spinner while AI processes
     }
 
     setTasks([optimisticTask, ...tasks])
     setNewTaskTitle('')
 
     try {
-      // 2. Save to DB
+      // Save to database
       const newTask = await createTask(supabase, newTaskTitle, user.id)
       
-      // 3. CRITICAL: Swap Temp ID with Real ID locally
       if (newTask) {
+        // Replace temporary ID with real database ID
         setTasks(current => current.map(t => 
           t.id === tempId ? { ...t, id: newTask.id } : t
         ))
 
-        // 4. Trigger AI (N8N)
+        // Trigger AI processing via N8N webhook
         fetch('/api/n8n-trigger', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
           body: JSON.stringify({
-            taskId: newTask.id, // Send Real ID to N8N
+            taskId: newTask.id,
             title: newTask.title
           })
         }).catch(console.error)
       }
 
     } catch (error: any) {
-      console.error('Error:', error)
-      setTasks(current => current.filter(t => t.id !== tempId)) // Rollback
+      console.error('Error creating task:', error)
+      // Rollback optimistic update on error
+      setTasks(current => current.filter(t => t.id !== tempId))
       alert(`Error: ${error.message}`)
     } finally {
       setSubmitting(false)
     }
   }
 
-  // Handlers
+  // Task action handlers with optimistic updates
   const handleToggle = async (id: string, completed: boolean) => {
+    // Optimistic update: Update UI immediately
     setTasks(tasks.map(t => t.id === id ? { ...t, completed } : t))
+    // Persist to database (Realtime will confirm the update)
     await toggleTask(supabase, id, completed, user.id)
   }
 
   const handleEdit = async (id: string, newTitle: string) => {
+    // Optimistic update: Update UI immediately
     setTasks(tasks.map(t => t.id === id ? { ...t, title: newTitle } : t))
+    // Persist to database (Realtime will confirm the update)
     await editTask(supabase, id, newTitle, user.id)
   }
 
   const handleDelete = async (id: string) => {
+    // Optimistic update: Remove from UI immediately
     setTasks(tasks.filter(t => t.id !== id))
+    // Persist to database (Realtime will confirm the deletion)
     await deleteTask(supabase, id, user.id)
   }
 
