@@ -1,17 +1,16 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import { getTasks, createTask, toggleTask, editTask, deleteTask } from '@/lib/tasks'
 import TodoItem from './TodoItem'
-import { Plus, Loader2 } from 'lucide-react'
+import { Plus, Loader2, Wifi, WifiOff } from 'lucide-react'
 
-// Helper function to generate IDs in non-secure contexts (HTTP)
+// Helper for HTTP environments (IP address)
 function generateUUID() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID();
   }
-  // Fallback for environments where crypto is not available
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
     var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
     return v.toString(16);
@@ -19,54 +18,33 @@ function generateUUID() {
 }
 
 export default function TodoList() {
-  // Create client instance inside component
   const supabase = createClient()
-  
   const [tasks, setTasks] = useState<any[]>([])
   const [newTaskTitle, setNewTaskTitle] = useState('')
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [user, setUser] = useState<any>(null)
+  const [realtimeStatus, setRealtimeStatus] = useState('disconnected')
 
-  // 1. Auth & Initial Load
+  // 1. Auth & Data Load
   useEffect(() => {
     const initData = async () => {
-      // Check active session
-      const { data: { session } } = await supabase.auth.getSession()
-      
-      if (session?.user) {
-        setUser(session.user)
-        try {
-          const data = await getTasks(supabase, session.user.id)
-          setTasks(data || [])
-        } catch (e) {
-          console.error('Error fetching tasks:', e)
-        }
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        setUser(user)
+        const data = await getTasks(supabase, user.id)
+        setTasks(data || [])
       }
       setLoading(false)
     }
-
     initData()
-    
-    // Auth Listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        setUser(session.user) 
-      } else {
-        setUser(null)
-        setTasks([])
-      }
-    })
-
-    return () => subscription.unsubscribe()
   }, [])
 
-  // 2. Realtime Subscription
+  // 2. Realtime Connection (Robust Refetch Strategy)
   useEffect(() => {
     if (!user) return
 
-    console.log('🔌 Connecting to Realtime for user:', user.id)
-
+    console.log('🔌 Connecting Realtime...', user.id)
     const channel = supabase
       .channel(`realtime:tasks:${user.id}`)
       .on(
@@ -77,31 +55,18 @@ export default function TodoList() {
           table: 'tasks',
           filter: `user_id=eq.${user.id}`,
         },
-        (payload: any) => {
-          console.log('⚡ Realtime Event:', payload)
-          const { eventType, new: newRecord, old: oldRecord } = payload
+        async (payload: any) => {
+          console.log('⚡ Realtime Event received:', payload)
           
-          setTasks((current) => {
-            if (eventType === 'INSERT') {
-               // Prevent duplicates from optimistic updates
-               if (current.some(t => t.id === newRecord.id)) {
-                 // Update the temporary ID with the real one if needed, or just replace
-                 return current.map(t => t.id === newRecord.id ? newRecord : t)
-               }
-               return [newRecord, ...current]
-            }
-            if (eventType === 'UPDATE') {
-              return current.map(t => t.id === newRecord.id ? { ...t, ...newRecord } : t)
-            }
-            if (eventType === 'DELETE') {
-              return current.filter(t => t.id !== oldRecord.id)
-            }
-            return current
-          })
+          // DEADLINE FIX: Brute-force refresh to guarantee UI matches DB
+          // This solves ID mismatches and kills the 'spinner' automatically
+          const freshTasks = await getTasks(supabase, user.id)
+          setTasks(freshTasks || [])
         }
       )
       .subscribe((status) => {
-        console.log('Realtime Status:', status)
+        console.log('STATUS:', status)
+        setRealtimeStatus(status)
       })
 
     return () => {
@@ -114,49 +79,47 @@ export default function TodoList() {
     if (!newTaskTitle.trim() || !user) return
 
     setSubmitting(true)
+    const tempId = generateUUID() // Temporary ID for UI
     
-    // FIX: Use custom generator instead of crypto.randomUUID()
-    const tempId = generateUUID()
-    
-    // Optimistic Update
+    // 1. Optimistic Add (Show immediately)
     const optimisticTask = {
       id: tempId,
       title: newTaskTitle,
       completed: false,
       created_at: new Date().toISOString(),
       user_id: user.id,
-      is_ai_processing: true
+      is_ai_processing: true // Start Spinner
     }
 
     setTasks([optimisticTask, ...tasks])
     setNewTaskTitle('')
 
     try {
-      // Pass 'supabase' client to the function
+      // 2. Save to DB
       const newTask = await createTask(supabase, newTaskTitle, user.id)
       
-      // Trigger Automation via API Route (Auth cookies included automatically by browser)
+      // 3. CRITICAL: Swap Temp ID with Real ID locally
       if (newTask) {
+        setTasks(current => current.map(t => 
+          t.id === tempId ? { ...t, id: newTask.id } : t
+        ))
+
+        // 4. Trigger AI (N8N)
         fetch('/api/n8n-trigger', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          credentials: 'include', // Important for cookies
+          credentials: 'include',
           body: JSON.stringify({
-            taskId: newTask.id,
+            taskId: newTask.id, // Send Real ID to N8N
             title: newTask.title
           })
-        }).catch(err => console.error('Webhook Error:', err))
+        }).catch(console.error)
       }
+
     } catch (error: any) {
-      console.error('FULL ERROR OBJECT:', error)
-      console.error('Error Message:', error.message)
-      console.error('Error Details:', error.details)
-      
-      // Rollback
-      setTasks(current => current.filter(t => t.id !== tempId))
-      
-      // Show specific alert
-      alert(`Failed: ${error.message || 'Unknown error'}`)
+      console.error('Error:', error)
+      setTasks(current => current.filter(t => t.id !== tempId)) // Rollback
+      alert(`Error: ${error.message}`)
     } finally {
       setSubmitting(false)
     }
@@ -164,7 +127,6 @@ export default function TodoList() {
 
   // Handlers
   const handleToggle = async (id: string, completed: boolean) => {
-    // Optimistic
     setTasks(tasks.map(t => t.id === id ? { ...t, completed } : t))
     await toggleTask(supabase, id, completed, user.id)
   }
@@ -175,7 +137,6 @@ export default function TodoList() {
   }
 
   const handleDelete = async (id: string) => {
-    // Optimistic
     setTasks(tasks.filter(t => t.id !== id))
     await deleteTask(supabase, id, user.id)
   }
@@ -184,19 +145,29 @@ export default function TodoList() {
 
   return (
     <div className="w-full max-w-2xl mx-auto space-y-8">
-      <header className="space-y-2">
-        <h1 className="text-3xl font-bold text-white">My Tasks</h1>
-        <p className="text-gray-400">
-          Managed by AI & Realtime
-          {user && <span className="block text-xs text-gray-500 mt-1">User: {user.email}</span>}
-        </p>
+      <header className="space-y-2 relative">
+        <div className="flex justify-between items-start">
+            <div>
+                <h1 className="text-3xl font-bold text-white">My Tasks</h1>
+                <p className="text-gray-400 text-sm">
+                User: {user?.email}
+                </p>
+            </div>
+            <div className="flex items-center gap-2 text-xs font-mono bg-gray-800 px-2 py-1 rounded">
+                {realtimeStatus === 'SUBSCRIBED' ? (
+                    <><Wifi size={14} className="text-green-400" /> Online</>
+                ) : (
+                    <><WifiOff size={14} className="text-red-400" /> {realtimeStatus}</>
+                )}
+            </div>
+        </div>
       </header>
 
       <form onSubmit={handleAddTask} className="relative">
         <input
           value={newTaskTitle}
           onChange={(e) => setNewTaskTitle(e.target.value)}
-          placeholder="New task..."
+          placeholder="New task... (e.g. 'leite')"
           className="w-full bg-[#1e2029] border border-gray-700 rounded-lg px-4 py-4 pr-12 text-white focus:ring-2 focus:ring-purple-600 outline-none placeholder-gray-500"
           disabled={submitting}
         />
@@ -206,21 +177,15 @@ export default function TodoList() {
       </form>
 
       <div className="space-y-3">
-        {tasks.length === 0 ? (
-          <div className="text-center py-8 text-gray-500 border border-dashed border-gray-800 rounded-lg">
-            No tasks yet. Add one to start!
-          </div>
-        ) : (
-          tasks.map(task => (
-            <TodoItem 
-              key={task.id} 
-              task={task} 
-              onToggle={handleToggle} 
-              onEdit={handleEdit} 
-              onDelete={handleDelete} 
-            />
-          ))
-        )}
+        {tasks.map(task => (
+          <TodoItem 
+            key={task.id} 
+            task={task} 
+            onToggle={handleToggle} 
+            onEdit={handleEdit} 
+            onDelete={handleDelete} 
+          />
+        ))}
       </div>
     </div>
   )
