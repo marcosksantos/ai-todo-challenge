@@ -65,7 +65,10 @@ export default function TodoList() {
         }
       )
       .subscribe((status) => {
-        console.log('STATUS:', status)
+        // Only log important status changes (not every error)
+        if (status === 'SUBSCRIBED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.log('📡 Realtime STATUS:', status)
+        }
         setRealtimeStatus(status)
       })
 
@@ -78,25 +81,82 @@ export default function TodoList() {
   useEffect(() => {
     if (!user) return
 
+    console.log('🔄 Polling started for user:', user.id)
+
     const interval = setInterval(async () => {
       // Only fetch if we are not currently submitting/editing to avoid jitter
       if (!submitting) {
-        const freshTasks = await getTasks(supabase, user.id)
-        
-        if (freshTasks) {
-          setTasks(current => {
-            // Optional: Only update if data changed to avoid re-renders,
-            // but for this deadline, simple replacement is fine.
-            // Check if any title changed (e.g. AI update)
-            const hasChanges = JSON.stringify(current) !== JSON.stringify(freshTasks)
-            return hasChanges ? freshTasks : current
-          })
+        try {
+          const freshTasks = await getTasks(supabase, user.id)
+          
+          if (freshTasks && Array.isArray(freshTasks)) {
+            setTasks(current => {
+              // Create maps for efficient comparison
+              const currentMap = new Map(current.map(t => [t.id, { title: t.title, completed: t.completed }]))
+              const freshMap = new Map(freshTasks.map(t => [t.id, { title: t.title, completed: t.completed }]))
+              
+              // Check for changes in existing tasks (especially title changes from N8N)
+              let hasChanges = false
+              let changeDetails: any[] = []
+              
+              for (const [id, freshData] of freshMap.entries()) {
+                const currentData = currentMap.get(id)
+                if (!currentData) {
+                  hasChanges = true
+                  changeDetails.push({ id, type: 'new', data: freshData })
+                } else if (currentData.title !== freshData.title) {
+                  hasChanges = true
+                  changeDetails.push({ 
+                    id, 
+                    type: 'title_change', 
+                    old: currentData.title, 
+                    new: freshData.title 
+                  })
+                } else if (currentData.completed !== freshData.completed) {
+                  hasChanges = true
+                  changeDetails.push({ 
+                    id, 
+                    type: 'completion_change', 
+                    old: currentData.completed, 
+                    new: freshData.completed 
+                  })
+                }
+              }
+              
+              // Check for removed tasks
+              for (const [id] of currentMap.entries()) {
+                if (!freshMap.has(id)) {
+                  hasChanges = true
+                  changeDetails.push({ id, type: 'removed' })
+                }
+              }
+              
+              if (hasChanges) {
+                console.log('🔄 Polling detected changes:', changeDetails)
+                // Merge: Keep optimistic updates (is_ai_processing) but update with fresh data
+                const merged = freshTasks.map(fresh => {
+                  const optimistic = current.find(c => c.id === fresh.id)
+                  return optimistic && optimistic.is_ai_processing 
+                    ? { ...fresh, is_ai_processing: optimistic.is_ai_processing }
+                    : fresh
+                })
+                return merged
+              }
+              
+              return current
+            })
+          }
+        } catch (error) {
+          console.error('❌ Polling error:', error)
         }
       }
     }, 3000) // Poll every 3 seconds
 
-    return () => clearInterval(interval)
-  }, [user, submitting])
+    return () => {
+      console.log('🔄 Polling stopped')
+      clearInterval(interval)
+    }
+  }, [user, submitting, supabase])
 
   const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault()
