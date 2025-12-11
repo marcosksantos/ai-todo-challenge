@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import { getTasks, createTask, toggleTask, editTask, deleteTask } from '@/lib/tasks'
 import TodoItem from './TodoItem'
-import { Plus, Loader2, Wifi, WifiOff } from 'lucide-react'
+import { Plus, Loader2, Wifi, WifiOff, LogOut } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 
 // Helper for generating temporary IDs for optimistic updates
 function generateUUID() {
@@ -19,6 +20,7 @@ function generateUUID() {
 
 export default function TodoList() {
   const supabase = createClient()
+  const router = useRouter()
   const [tasks, setTasks] = useState<any[]>([])
   const [newTaskTitle, setNewTaskTitle] = useState('')
   const [loading, setLoading] = useState(true)
@@ -207,16 +209,36 @@ export default function TodoList() {
     await deleteTask(supabase, id, user.id)
   }
 
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut()
+      // AuthGuard will handle redirect to /auth automatically
+      router.refresh()
+    } catch (error) {
+      console.error('Error signing out:', error)
+    }
+  }
+
   if (loading) return <div className="flex justify-center p-12"><Loader2 className="animate-spin text-gray-400" /></div>
 
   return (
     <div className="w-full max-w-2xl mx-auto space-y-8">
       <header className="space-y-2 relative">
         <div className="flex justify-between items-start">
-            <div>
-                <h1 className="text-3xl font-bold text-white">My Tasks</h1>
-                <p className="text-gray-400 text-sm">
-                User: {user?.email}
+            <div className="flex-1">
+                <div className="flex items-center gap-3 mb-1">
+                  <h1 className="text-3xl font-bold text-white">My Tasks</h1>
+                  <button
+                    onClick={handleLogout}
+                    className="text-gray-400 hover:text-red-400 transition-colors text-sm font-normal px-3 py-1.5 rounded-md border border-gray-700 hover:border-red-400/50 flex items-center gap-1.5"
+                    aria-label="Sign out"
+                  >
+                    <LogOut size={14} />
+                    <span>Sign Out</span>
+                  </button>
+                </div>
+                <p className="text-gray-400 text-xs">
+                  {user?.email}
                 </p>
             </div>
             <div className="flex items-center gap-2 text-xs font-mono bg-gray-800 px-2 py-1 rounded">
@@ -233,7 +255,7 @@ export default function TodoList() {
         <input
           value={newTaskTitle}
           onChange={(e) => setNewTaskTitle(e.target.value)}
-          placeholder="New task... (e.g. 'leite')"
+          placeholder="New task... (e.g., 'Buy milk')"
           className="w-full bg-[#1e2029] border border-gray-700 rounded-lg px-4 py-4 pr-12 text-white focus:ring-2 focus:ring-purple-600 outline-none placeholder-gray-500"
           disabled={submitting}
         />
