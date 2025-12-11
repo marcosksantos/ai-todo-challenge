@@ -27,11 +27,10 @@ export default function WhatsAppConnectButton() {
     return input.replace(/\D/g, "");
   };
 
-  // Validate phone number
+  // Validate phone number: must have at least 8 digits
   const validatePhone = (phoneNumber: string): boolean => {
     const sanitized = sanitizePhone(phoneNumber);
-    // Minimum 10 digits (US format), but allow international numbers (up to 15 digits)
-    return sanitized.length >= 10 && sanitized.length <= 15;
+    return sanitized.length >= 8;
   };
 
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -49,14 +48,14 @@ export default function WhatsAppConnectButton() {
 
     // Validate input
     if (!phone.trim()) {
-      setError("Please enter a valid number with country code");
+      setError("Please enter a valid phone number with country code");
       return;
     }
 
     const sanitizedPhone = sanitizePhone(phone);
     
     if (!validatePhone(sanitizedPhone)) {
-      setError("Please enter a valid number with country code (10-15 digits)");
+      setError("Phone number must have at least 8 digits. Please include country code");
       return;
     }
 
@@ -107,10 +106,8 @@ export default function WhatsAppConnectButton() {
       setError("");
 
       // Open WhatsApp Web with pre-filled message
-      const whatsappMessage = encodeURIComponent(
-        "Hi! I just connected my account. #to-do list Buy coffee"
-      );
-      const whatsappUrl = `https://wa.me/5522992737876?text=${whatsappMessage}`;
+      const whatsappMessage = "Hello! I just connected my account.\n\n#to-do list Buy coffee";
+      const whatsappUrl = `https://wa.me/5522992737876?text=${encodeURIComponent(whatsappMessage)}`;
       window.open(whatsappUrl, "_blank");
     } catch (error: any) {
       console.error("Error:", error);
@@ -194,7 +191,7 @@ export default function WhatsAppConnectButton() {
                 }}
               />
               <p className="text-xs text-gray-500">
-                Enter your number with Country Code (DDI).
+                Enter your number including Country Code (DDI).
               </p>
               
               {/* Error Message */}
@@ -224,4 +221,3 @@ export default function WhatsAppConnectButton() {
     </>
   );
 }
-

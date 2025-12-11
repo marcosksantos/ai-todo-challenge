@@ -1,36 +1,97 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AI Todo Copilot 🚀
 
-## Getting Started
+A smart task management application that uses Artificial Intelligence to refine your to-do list automatically. Built as a technical challenge solution, demonstrating modern architecture, real-time updates, and multi-channel integration (Web & WhatsApp).
 
-First, run the development server:
+## 🎥 Video Demo
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+[Link to Loom Video] (Add your link here)
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## ✨ Key Features
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Core Functionality (Part 1)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **⚡ Optimistic UI:** Tasks appear instantly before server confirmation.
 
-## Learn More
+- **🔐 Secure Auth:** Complete authentication flow using Supabase Auth.
 
-To learn more about Next.js, take a look at the following resources:
+- **💾 Persistence:** All data stored in Supabase PostgreSQL (Cloud).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- **📱 Responsive:** Mobile-first design using Tailwind CSS.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### AI & Automation (Part 2)
 
-## Deploy on Vercel
+- **🤖 Auto-Enhancement:** When a task is created, N8N + OpenAI automatically refines the title and adds a detailed description in the background.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- **💬 AI Chatbot:** Integrated floating chatbot to discuss tasks and get productivity advice.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **🔄 Real-time Sync:** The UI updates automatically via Supabase Realtime subscriptions when the AI finishes processing.
+
+### Bonus Features 🌟
+
+- **🟢 WhatsApp Integration:** Connect your phone number to manage tasks via WhatsApp (triggered by \`#to-do list\` messages).
+
+- **🛡️ API-First Design:** Chat interactions are proxied through Next.js API routes for security.
+
+## 🏗️ Architecture
+
+The project follows a modern, event-driven architecture:
+
+1.  **Frontend:** Next.js 16 (App Router) handles the UI.
+
+2.  **Database:** Supabase provides the DB and Realtime channels.
+
+3.  **Automation Engine (N8N):**
+
+    * **Trigger:** Receives webhooks from the App.
+
+    * **Process:** Calls OpenAI to analyze/enhance text.
+
+    * **Action:** Updates the Supabase database directly.
+
+4.  **Feedback Loop:** The Frontend listens to Supabase \`UPDATE\` events to show the AI's work without refreshing the page.
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- Node.js 18+
+
+- Supabase Account
+
+- N8N Instance (Self-hosted or Cloud)
+
+### Environment Variables
+
+Create a \`.env.local\` file:
+
+\`\`\`bash
+
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+
+N8N_WEBHOOK_URL=your_n8n_task_webhook
+
+N8N_CHAT_WEBHOOK_URL=your_n8n_chat_webhook
+
+\`\`\`
+
+## 📂 Project Structure
+
+- \`/app\`: Next.js App Router pages and API routes.
+
+- \`/components\`: React components (TodoList, Chatbot, WhatsAppButton).
+
+- \`/lib\`: Supabase client and utility functions.
+
+- \`/utils\`: Helper functions.
+
+## 🧠 Decisions & Trade-offs
+
+- **Supabase Realtime vs. Polling:** Chose Realtime subscriptions for a seamless "magic" experience when the AI updates tasks, rather than making the user refresh.
+
+- **Next.js API Routes:** Used as a proxy for N8N webhooks to avoid CORS issues and hide the workflow URLs from the client-side code.
+
+- **Optimistic Updates:** Implemented to ensure the app feels native and fast, even with network latency.
+
+**Developed for Technical Assessment**
