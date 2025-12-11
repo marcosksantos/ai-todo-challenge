@@ -74,6 +74,30 @@ export default function TodoList() {
     }
   }, [user])
 
+  // 3. Fallback: Polling (Safety Net for broken WebSockets)
+  useEffect(() => {
+    if (!user) return
+
+    const interval = setInterval(async () => {
+      // Only fetch if we are not currently submitting/editing to avoid jitter
+      if (!submitting) {
+        const freshTasks = await getTasks(supabase, user.id)
+        
+        if (freshTasks) {
+          setTasks(current => {
+            // Optional: Only update if data changed to avoid re-renders,
+            // but for this deadline, simple replacement is fine.
+            // Check if any title changed (e.g. AI update)
+            const hasChanges = JSON.stringify(current) !== JSON.stringify(freshTasks)
+            return hasChanges ? freshTasks : current
+          })
+        }
+      }
+    }, 3000) // Poll every 3 seconds
+
+    return () => clearInterval(interval)
+  }, [user, submitting])
+
   const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newTaskTitle.trim() || !user) return
