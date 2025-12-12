@@ -1,12 +1,17 @@
-/**
- * Classifies user messages and extracts task data
- * Returns strict JSON without markdown blocks
- */
+// AI Todo Copilot - Message Classifier
+// Classifies user messages and extracts task data for WhatsApp integration
 
 type ClassificationResult =
   | { action: "create"; title: string }
-  | { action: "reply"; text: string };
+  | { action: "reply"; text: string }
 
+/**
+ * Classifies user messages and extracts task data.
+ * Returns strict JSON without markdown blocks.
+ * 
+ * @param message - User message to classify
+ * @returns Classification result with action and data
+ */
 export function classifyMessage(message: string): ClassificationResult {
   const normalized = message.trim().toLowerCase();
 
@@ -50,15 +55,27 @@ export function classifyMessage(message: string): ClassificationResult {
   };
 }
 
+/**
+ * Cleans and normalizes task title by removing command prefixes and suffixes.
+ * 
+ * @param title - Raw title to clean
+ * @returns Cleaned title string
+ */
 function cleanTitle(title: string): string {
   return title
     .trim()
     .replace(/^(?:remind me to|add task|create task|new task|todo|task:)\s*/i, "")
     .replace(/\s+(?:as a task|to my list|to tasks)$/i, "")
     .trim()
-    .replace(/\s+/g, " ");
+    .replace(/\s+/g, " ")
 }
 
+/**
+ * Checks if message is a greeting.
+ * 
+ * @param message - Message to check
+ * @returns True if message is a greeting
+ */
 function isGreeting(message: string): boolean {
   const greetings = [
     "hello",
@@ -73,6 +90,12 @@ function isGreeting(message: string): boolean {
   return greetings.some((greeting) => message.startsWith(greeting));
 }
 
+/**
+ * Checks if message is a question.
+ * 
+ * @param message - Message to check
+ * @returns True if message is a question
+ */
 function isQuestion(message: string): boolean {
   return (
     message.includes("?") ||

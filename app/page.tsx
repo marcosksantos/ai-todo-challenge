@@ -1,7 +1,10 @@
-import TodoList from "@/app/components/TodoList";
-import Chatbot from "@/app/components/Chatbot";
-import WhatsAppButton from "@/app/components/WhatsAppButton";
-import AuthGuard from "@/app/components/AuthGuard";
+// AI Todo Copilot - Home Page
+// Main application page with task list, chatbot, and WhatsApp integration
+
+import AuthGuard from "@/app/components/AuthGuard"
+import Chatbot from "@/app/components/Chatbot"
+import TodoList from "@/app/components/TodoList"
+import WhatsAppButton from "@/app/components/WhatsAppButton"
 
 export default function Home() {
   return (
@@ -27,5 +30,5 @@ export default function Home() {
         <WhatsAppButton />
       </main>
     </AuthGuard>
-  );
+  )
 }

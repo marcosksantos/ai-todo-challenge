@@ -1,6 +1,15 @@
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+// AI Todo Copilot - Supabase Client (Server)
+// Creates a Supabase client for use in Server Components and Route Handlers
 
+import { cookies } from 'next/headers'
+import { createServerClient } from '@supabase/ssr'
+
+/**
+ * Creates a Supabase client for server-side usage.
+ * Should only be used in Server Components and Route Handlers.
+ * 
+ * @returns Supabase client instance
+ */
 export async function createClient() {
   const cookieStore = await cookies()
 

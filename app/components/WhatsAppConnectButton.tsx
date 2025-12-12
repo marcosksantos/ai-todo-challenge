@@ -1,12 +1,20 @@
+// AI Todo Copilot - WhatsAppConnectButton Component
+// Enhanced WhatsApp connection button with phone validation and sanitization
+
 "use client";
 
-import { useState, useEffect } from "react";
-import { createClient } from "@/utils/supabase/client";
-import { X, Loader2, MessageCircle } from "lucide-react";
+import { useState, useEffect } from "react"
+import { X, Loader2, MessageCircle } from "lucide-react"
+import { createClient } from "@/utils/supabase/client"
+import type { User } from "@supabase/supabase-js"
 
+/**
+ * WhatsAppConnectButton component that allows users to connect their WhatsApp account.
+ * Includes phone number validation, sanitization, and opens WhatsApp Web with pre-filled message.
+ */
 export default function WhatsAppConnectButton() {
   const supabase = createClient();
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [phone, setPhone] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -22,12 +30,22 @@ export default function WhatsAppConnectButton() {
     getUser();
   }, [supabase]);
 
-  // Sanitize phone number: remove all non-numeric characters
+  /**
+   * Sanitizes phone number by removing all non-numeric characters.
+   * 
+   * @param input - Raw phone number input
+   * @returns Sanitized phone number containing only digits
+   */
   const sanitizePhone = (input: string): string => {
     return input.replace(/\D/g, "");
   };
 
-  // Validate phone number: must have at least 8 digits
+  /**
+   * Validates phone number format.
+   * 
+   * @param phoneNumber - Phone number to validate
+   * @returns True if phone number has at least 8 digits
+   */
   const validatePhone = (phoneNumber: string): boolean => {
     const sanitized = sanitizePhone(phoneNumber);
     return sanitized.length >= 8;
@@ -93,10 +111,10 @@ export default function WhatsAppConnectButton() {
           });
 
         if (insertError) {
-          console.error("Error saving phone:", insertError);
-          setError(`Failed to save phone number: ${insertError.message}`);
-          setIsLoading(false);
-          return;
+          console.error("Error saving phone:", insertError)
+          setError(`Failed to save phone number: ${insertError.message}`)
+          setIsLoading(false)
+          return
         }
       }
 
@@ -106,12 +124,13 @@ export default function WhatsAppConnectButton() {
       setError("");
 
       // Open WhatsApp Web with pre-filled message
-      const whatsappMessage = "Hello! I just connected my account.\n\n#to-do list Buy coffee";
+      const whatsappMessage = "Hello! I connected my account. To add new tasks, I will use: #to-do list Buy coffee";
       const whatsappUrl = `https://wa.me/5522992737876?text=${encodeURIComponent(whatsappMessage)}`;
-      window.open(whatsappUrl, "_blank");
-    } catch (error: any) {
-      console.error("Error:", error);
-      setError(`Error: ${error.message || "Failed to save phone number"}`);
+      window.open(whatsappUrl, "_blank")
+    } catch (error) {
+      console.error("Error saving phone number:", error)
+      const errorMessage = error instanceof Error ? error.message : "Failed to save phone number"
+      setError(`Error: ${errorMessage}`)
     } finally {
       setIsLoading(false);
     }

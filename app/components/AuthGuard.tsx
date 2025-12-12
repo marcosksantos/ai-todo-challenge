@@ -1,3 +1,6 @@
+// AI Todo Copilot - AuthGuard Component
+// Protects routes by verifying user authentication and redirecting to /auth if not authenticated
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -10,6 +13,12 @@ interface AuthGuardProps {
   children: React.ReactNode;
 }
 
+/**
+ * AuthGuard component that protects routes by checking user authentication.
+ * Redirects to /auth if user is not authenticated.
+ * 
+ * @param children - React children to render when user is authenticated
+ */
 export default function AuthGuard({ children }: AuthGuardProps) {
   const router = useRouter();
   const supabase = createClient();
@@ -39,7 +48,7 @@ export default function AuthGuard({ children }: AuthGuardProps) {
 
     checkUser();
 
-    // Listen for auth changes
+    // Listen for authentication state changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
@@ -53,6 +62,7 @@ export default function AuthGuard({ children }: AuthGuardProps) {
     return () => {
       subscription.unsubscribe();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
   if (loading) {
@@ -67,7 +77,7 @@ export default function AuthGuard({ children }: AuthGuardProps) {
   }
 
   if (!user) {
-    return null; // Will redirect to /auth
+    return null; // AuthGuard will redirect to /auth
   }
 
   return <>{children}</>;

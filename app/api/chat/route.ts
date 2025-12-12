@@ -1,5 +1,15 @@
-import { NextResponse } from 'next/server';
+// AI Todo Copilot - Chat API Route
+// Proxies chat messages to N8N webhook for AI processing
 
+import { NextResponse } from 'next/server'
+
+/**
+ * POST handler that proxies chat messages to N8N webhook.
+ * Validates request and forwards message to AI service.
+ * 
+ * @param request - Request object containing message and user_id
+ * @returns JSON response with AI reply
+ */
 export async function POST(request: Request) {
   try {
     const { message, user_id } = await request.json();
@@ -47,14 +57,14 @@ export async function POST(request: Request) {
     }
 
     // Parse and return N8N response
-    const data = await response.json();
-    return NextResponse.json(data);
-  } catch (error: any) {
-    console.error('[CHAT] Error:', error);
+    const data = await response.json()
+    return NextResponse.json(data)
+  } catch (error) {
+    console.error('[CHAT] Error:', error)
     return NextResponse.json(
       { error: 'Failed to communicate with AI' },
       { status: 500 }
-    );
+    )
   }
 }
 

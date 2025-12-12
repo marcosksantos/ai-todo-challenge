@@ -1,21 +1,29 @@
+// AI Todo Copilot - Chatbot Component
+// Floating chatbot interface that communicates with AI via N8N webhook
+
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { MessageCircle, X, Send, Loader2 } from "lucide-react";
-import { createClient } from "@/utils/supabase/client";
+import { useState, useRef, useEffect } from "react"
+import { MessageCircle, X, Send, Loader2 } from "lucide-react"
+import { createClient } from "@/utils/supabase/client"
+import type { User } from "@supabase/supabase-js"
 
 type Message = {
   role: "user" | "bot";
   content: string;
 };
 
+/**
+ * Chatbot component that provides AI-powered chat interface.
+ * Messages are proxied through Next.js API routes to N8N webhook for processing.
+ */
 export default function Chatbot() {
   const supabase = createClient();
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatRef = useRef<HTMLDivElement>(null);
 
@@ -23,7 +31,7 @@ export default function Chatbot() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  // Get current user on mount
+  // Get current authenticated user on component mount
   useEffect(() => {
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -84,7 +92,7 @@ export default function Chatbot() {
       const data = await response.json();
       
       // Handle different response formats from N8N
-      // N8N might return { reply: "..." } or { message: "..." } or just a string
+      // N8N might return { reply: "..." }, { message: "..." }, { text: "..." }, or other formats
       const botReply = data.reply || data.message || data.text || JSON.stringify(data);
       
       const botMessage: Message = { 
@@ -140,7 +148,7 @@ export default function Chatbot() {
               <div className="text-center text-slate-400 text-sm mt-12">
                 <MessageCircle size={32} className="mx-auto mb-3 text-slate-700" />
                 <p>Start a conversation</p>
-                <p className="text-xs mt-1 text-slate-500">I'm here to help with your tasks</p>
+                <p className="text-xs mt-1 text-slate-500">I&apos;m here to help with your tasks</p>
               </div>
             )}
             {messages.map((msg, idx) => (

@@ -1,54 +1,67 @@
+// AI Todo Copilot - TodoList Component
+// Main task list component with Realtime subscriptions, optimistic updates, and AI integration
+
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { Plus, Loader2, Wifi, WifiOff, LogOut } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { getTasks, createTask, toggleTask, editTask, deleteTask, updateTaskDescription } from '@/lib/tasks'
 import TodoItem from './TodoItem'
-import { Plus, Loader2, Wifi, WifiOff, LogOut } from 'lucide-react'
-import { useRouter } from 'next/navigation'
+import type { Task } from '@/lib/types'
+import type { User } from '@supabase/supabase-js'
 
-// Helper for generating temporary IDs for optimistic updates
+/**
+ * Generates a temporary UUID for optimistic updates.
+ * Uses crypto.randomUUID if available, otherwise falls back to a custom implementation.
+ * 
+ * @returns A UUID string
+ */
 function generateUUID() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID();
   }
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+    const r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
     return v.toString(16);
   });
 }
 
+/**
+ * TodoList component that manages the main task list interface.
+ * Handles Realtime subscriptions, optimistic updates, and AI processing triggers.
+ */
 export default function TodoList() {
   const supabase = createClient()
   const router = useRouter()
-  const [tasks, setTasks] = useState<any[]>([])
+  const [tasks, setTasks] = useState<Task[]>([])
   const [newTaskTitle, setNewTaskTitle] = useState('')
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
-  const [user, setUser] = useState<any>(null)
-  const [realtimeStatus, setRealtimeStatus] = useState('disconnected')
+  const [user, setUser] = useState<User | null>(null)
+  const [realtimeStatus, setRealtimeStatus] = useState<string>('disconnected')
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null)
   const [editingTaskIds, setEditingTaskIds] = useState<Set<string>>(new Set())
 
-  // 1. Initialize: Authenticate user and load initial tasks
+  // Initialize: Authenticate user and load initial tasks
   useEffect(() => {
     const initData = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         setUser(user)
-        const data = await getTasks(supabase, user.id)
-        setTasks(data || [])
+        const taskData = await getTasks(supabase, user.id)
+        setTasks(taskData || [])
       }
       setLoading(false)
     }
     initData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // 2. Realtime Subscription: Listen for INSERT, UPDATE, DELETE events
+  // Realtime Subscription: Listen for INSERT, UPDATE, DELETE events
   useEffect(() => {
     if (!user) return
-
-    console.log('🔌 Connecting to Realtime...', user.id)
     
     const channel = supabase
       .channel(`realtime:tasks:${user.id}`)
@@ -60,22 +73,40 @@ export default function TodoList() {
           table: 'tasks',
           filter: `user_id=eq.${user.id}`,
         },
-        (payload: any) => {
-          console.log('➕ INSERT event:', payload.new)
-          const newTask = payload.new
+        (payload) => {
+          // Supabase sends snake_case, map to Task type
+          const dbTask = payload.new as {
+            id: string
+            title: string
+            completed: boolean
+            created_at: string
+            user_id: string
+            description?: string | null
+          }
+          
+          const newTask: Task = {
+            id: dbTask.id,
+            title: dbTask.title,
+            completed: dbTask.completed,
+            created_at: dbTask.created_at,
+            user_id: dbTask.user_id,
+            description: dbTask.description ?? null,
+            is_ai_processing: false // New tasks from DB don't have this flag
+          }
           
           setTasks(current => {
-            // Check if task already exists (from optimistic update)
-            const exists = current.find(t => t.id === newTask.id)
-            if (exists) {
-              // Replace optimistic task with real data, preserve is_ai_processing if set
+            // Check if task already exists (from optimistic update or previous Realtime event)
+            const existingIndex = current.findIndex(t => t.id === newTask.id)
+            if (existingIndex !== -1) {
+              // Replace existing task with real data from DB, preserve is_ai_processing if it was set
               return current.map(t => 
                 t.id === newTask.id 
-                  ? { ...newTask, is_ai_processing: t.is_ai_processing }
+                  ? { ...newTask, is_ai_processing: t.is_ai_processing ?? false }
                   : t
               )
             }
-            // Add new task at the beginning (most recent first)
+            // Task doesn't exist yet, add at the beginning (most recent first)
+            // This handles edge case where Realtime arrives before optimistic update is replaced
             return [newTask, ...current]
           })
         }
@@ -88,9 +119,26 @@ export default function TodoList() {
           table: 'tasks',
           filter: `user_id=eq.${user.id}`,
         },
-        (payload: any) => {
-          console.log('✏️ UPDATE event:', payload.new)
-          const updatedTask = payload.new
+        (payload) => {
+          // Supabase sends snake_case, map to Task type
+          const dbTask = payload.new as {
+            id: string
+            title: string
+            completed: boolean
+            created_at: string
+            user_id: string
+            description?: string | null
+          }
+          
+          const updatedTask: Task = {
+            id: dbTask.id,
+            title: dbTask.title,
+            completed: dbTask.completed,
+            created_at: dbTask.created_at,
+            user_id: dbTask.user_id,
+            description: dbTask.description ?? null,
+            is_ai_processing: false // DB doesn't store this, will be set below if needed
+          }
           
           setTasks(current => {
             // Update the specific task in local state
@@ -98,16 +146,25 @@ export default function TodoList() {
               if (task.id === updatedTask.id) {
                 // Don't overwrite if user is currently editing this task
                 if (editingTaskIds.has(updatedTask.id)) {
-                  console.log('⏸️ Skipping Realtime update - user is editing task:', updatedTask.id)
                   return task
                 }
                 
                 // If title changed (AI update), remove processing indicator
                 const titleChanged = task.title !== updatedTask.title
+                const descriptionChanged = task.description !== updatedTask.description
+                
+                // If AI updated title or description, clear processing flag
+                if (titleChanged || descriptionChanged) {
+                  return { 
+                    ...updatedTask, 
+                    is_ai_processing: false
+                  }
+                }
+                
+                // Otherwise preserve the current is_ai_processing state
                 return { 
                   ...updatedTask, 
-                  // Clear is_ai_processing when title is updated by AI
-                  is_ai_processing: titleChanged ? false : (task.is_ai_processing || false)
+                  is_ai_processing: task.is_ai_processing ?? false
                 }
               }
               return task
@@ -123,22 +180,21 @@ export default function TodoList() {
           table: 'tasks',
           filter: `user_id=eq.${user.id}`,
         },
-        (payload: any) => {
-          console.log('🗑️ DELETE event:', payload.old)
-          const deletedId = payload.old.id
+        (payload) => {
+          // Supabase sends old record in snake_case
+          const deletedRecord = payload.old as { id: string }
+          const deletedId = deletedRecord.id
           
-          setTasks(current => current.filter(task => task.id !== deletedId))
+          if (deletedId) {
+            setTasks(current => current.filter(task => task.id !== deletedId))
+          }
         }
       )
       .subscribe((status) => {
-        if (status === 'SUBSCRIBED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          console.log('📡 Realtime status:', status)
-        }
         setRealtimeStatus(status)
       })
 
     return () => {
-      console.log('🔌 Disconnecting from Realtime...')
       supabase.removeChannel(channel)
     }
   }, [user, supabase, editingTaskIds])
@@ -150,8 +206,8 @@ export default function TodoList() {
     setSubmitting(true)
     const tempId = generateUUID()
     
-    // Optimistic update: Show task immediately with loading indicator
-    const optimisticTask = {
+    // Optimistic update: Show task immediately with AI processing indicator
+    const optimisticTask: Task = {
       id: tempId,
       title: newTaskTitle,
       completed: false,
@@ -168,12 +224,18 @@ export default function TodoList() {
       const newTask = await createTask(supabase, newTaskTitle, user.id)
       
       if (newTask) {
-        // Replace temporary ID with real database ID
+        // Replace temporary ID with real database ID and set AI processing flag
         setTasks(current => current.map(t => 
-          t.id === tempId ? { ...t, id: newTask.id } : t
+          t.id === tempId 
+            ? { 
+                ...newTask, 
+                is_ai_processing: true // Keep processing flag until AI updates
+              } 
+            : t
         ))
 
-        // Trigger AI processing via N8N webhook
+        // Trigger AI processing via N8N webhook (fire-and-forget)
+        // Send exactly { taskId, title } as expected by the API
         fetch('/api/n8n-trigger', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -182,28 +244,47 @@ export default function TodoList() {
             taskId: newTask.id,
             title: newTask.title
           })
-        }).catch(console.error)
+        }).catch((error) => {
+          // Log error but don't break the UI - AI processing is optional
+          console.error('[TodoList] Error triggering AI processing:', error)
+        })
       }
 
-    } catch (error: any) {
-      console.error('Error creating task:', error)
+    } catch (error) {
       // Rollback optimistic update on error
       setTasks(current => current.filter(t => t.id !== tempId))
-      alert(`Error: ${error.message}`)
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create task'
+      console.error('Error creating task:', errorMessage)
+      alert(`Error: ${errorMessage}`)
     } finally {
       setSubmitting(false)
     }
   }
 
-  // Task action handlers with optimistic updates
+  /**
+   * Handles task completion toggle with optimistic updates.
+   * 
+   * @param id - Task ID to toggle
+   * @param completed - New completion status
+   */
   const handleToggle = async (id: string, completed: boolean) => {
+    if (!user) return
+    
     // Optimistic update: Update UI immediately
     setTasks(tasks.map(t => t.id === id ? { ...t, completed } : t))
     // Persist to database (Realtime will confirm the update)
     await toggleTask(supabase, id, completed, user.id)
   }
 
+  /**
+   * Handles task title editing with optimistic updates and Realtime conflict protection.
+   * 
+   * @param id - Task ID to edit
+   * @param newTitle - New title for the task
+   */
   const handleEdit = async (id: string, newTitle: string) => {
+    if (!user) return
+    
     // Mark as editing to protect from Realtime overwrites
     setEditingTaskIds(prev => new Set(prev).add(id))
     
@@ -225,7 +306,15 @@ export default function TodoList() {
     }
   }
 
+  /**
+   * Handles task description editing with optimistic updates and Realtime conflict protection.
+   * 
+   * @param id - Task ID to edit
+   * @param description - New description for the task
+   */
   const handleEditDescription = async (id: string, description: string) => {
+    if (!user) return
+    
     // Mark as editing to protect from Realtime overwrites
     setEditingTaskIds(prev => new Set(prev).add(id))
     
@@ -251,13 +340,23 @@ export default function TodoList() {
     setExpandedTaskId(prev => prev === taskId ? null : taskId)
   }
 
+  /**
+   * Handles task deletion with optimistic updates.
+   * 
+   * @param id - Task ID to delete
+   */
   const handleDelete = async (id: string) => {
+    if (!user) return
+    
     // Optimistic update: Remove from UI immediately
     setTasks(tasks.filter(t => t.id !== id))
     // Persist to database (Realtime will confirm the deletion)
     await deleteTask(supabase, id, user.id)
   }
 
+  /**
+   * Handles user logout and redirects to auth page.
+   */
   const handleLogout = async () => {
     try {
       await supabase.auth.signOut()

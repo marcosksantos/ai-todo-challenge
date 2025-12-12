@@ -1,8 +1,11 @@
+// AI Todo Copilot - TodoItem Component
+// Individual task item with expandable card interface and inline editing
+
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { Check, Save, X, Sparkles, ChevronDown, Trash2 } from "lucide-react";
-import type { Task } from "@/lib/types";
+import { useState, useEffect, useRef } from "react"
+import { Check, Save, Sparkles, ChevronDown, Trash2 } from "lucide-react"
+import type { Task } from "@/lib/types"
 
 interface TodoItemProps {
   task: Task;
@@ -14,6 +17,18 @@ interface TodoItemProps {
   onToggleExpand: () => void;
 }
 
+/**
+ * TodoItem component that renders a single task with expandable card interface.
+ * Supports inline editing of title and description, optimistic UI updates, and AI processing indicators.
+ * 
+ * @param task - The task object to display
+ * @param onToggle - Callback to toggle task completion status
+ * @param onEdit - Callback to update task title
+ * @param onEditDescription - Callback to update task description
+ * @param onDelete - Callback to delete the task
+ * @param isExpanded - Whether the task card is currently expanded
+ * @param onToggleExpand - Callback to toggle expansion state
+ */
 export default function TodoItem({ 
   task, 
   onToggle, 
@@ -29,17 +44,17 @@ export default function TodoItem({
   const [optimisticCompleted, setOptimisticCompleted] = useState(task.completed);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Sync description when task updates from Realtime
+  // Sync description when task updates from Realtime subscription
   useEffect(() => {
     setEditDescription(task.description || '');
   }, [task.description]);
 
-  // Sync title when task updates from Realtime
+  // Sync title when task updates from Realtime subscription
   useEffect(() => {
     setEditText(task.title);
   }, [task.title]);
 
-  // Auto-resize textarea
+  // Auto-resize textarea to fit content
   useEffect(() => {
     if (isExpanded && textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -58,16 +73,16 @@ export default function TodoItem({
   };
 
   const handleDelete = async () => {
-    if (!confirm("Delete this task?")) return;
-    setIsLoading(true);
+    if (!confirm("Delete this task?")) return
+    setIsLoading(true)
     try {
-      onDelete(task.id);
+      onDelete(task.id)
     } catch (error) {
-      console.error("Error deleting task:", error);
+      console.error("Error deleting task:", error)
     } finally {
-      setIsLoading(false);
+      setIsLoading(false)
     }
-  };
+  }
 
   const handleSave = async () => {
     if (editText.trim() === task.title && editDescription.trim() === (task.description || '')) {
@@ -82,13 +97,13 @@ export default function TodoItem({
       if (editDescription.trim() !== (task.description || '')) {
         await onEditDescription(task.id, editDescription.trim());
       }
-      onToggleExpand();
+      onToggleExpand()
     } catch (error) {
-      console.error("Error saving task:", error);
+      console.error("Error saving task:", error)
     } finally {
-      setIsLoading(false);
+      setIsLoading(false)
     }
-  };
+  }
 
   const handleCancel = () => {
     setEditText(task.title);
@@ -181,7 +196,7 @@ export default function TodoItem({
           </button>
         </div>
       ) : (
-        /* Expanded State: Full card with editable title, notes, and actions */
+        // Expanded State: Full card with editable title, notes, and actions
         <div className="flex flex-col p-5 space-y-4">
           {/* Header with collapse button */}
           <div className="flex items-center justify-between mb-2">

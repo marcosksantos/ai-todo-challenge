@@ -1,9 +1,12 @@
-"use client";
+// AI Todo Copilot - Authentication Page
+// Sign in and sign up page with email/password and Google OAuth
 
-import { useState, FormEvent, useEffect, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+"use client"
+
+import { useState, FormEvent, useEffect, Suspense } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { Mail, Lock, Phone, Loader2, LogIn, UserPlus } from "lucide-react"
 import { createClient } from '@/utils/supabase/client'
-import { Mail, Lock, Phone, Loader2, LogIn, UserPlus } from "lucide-react";
 
 type AuthMode = "signin" | "signup";
 
@@ -63,13 +66,14 @@ function AuthPageContent() {
           return;
         }
 
-        router.push("/");
-        router.refresh();
+        router.push("/")
+        router.refresh()
       }
-    } catch (err: any) {
-      const errorMessage = err.message || "An error occurred";
-      alert(errorMessage);
-      setError(errorMessage);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "An error occurred"
+      console.error("Authentication error:", err)
+      alert(errorMessage)
+      setError(errorMessage)
     } finally {
       setLoading(false);
     }
@@ -94,13 +98,14 @@ function AuthPageContent() {
         return;
       }
       // OAuth redirect will happen automatically, so we don't need to handle loading state here
-    } catch (err: any) {
-      const errorMessage = err.message || "Google authentication failed";
-      alert(errorMessage);
-      setError(errorMessage);
-      setLoading(false);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Google authentication failed"
+      console.error("OAuth error:", err)
+      alert(errorMessage)
+      setError(errorMessage)
+      setLoading(false)
     }
-  };
+  }
 
   return (
     <div className="min-h-screen bg-[#030712] flex items-center justify-center p-4">
@@ -283,7 +288,7 @@ function AuthPageContent() {
         </div>
       </div>
     </div>
-  );
+  )
 }
 
 export default function AuthPage() {
@@ -295,6 +300,6 @@ export default function AuthPage() {
     }>
       <AuthPageContent />
     </Suspense>
-  );
+  )
 }
 

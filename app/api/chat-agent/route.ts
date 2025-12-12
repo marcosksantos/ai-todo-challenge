@@ -1,8 +1,18 @@
-import { NextRequest, NextResponse } from "next/server";
-import { classifyMessage } from "@/lib/messageClassifier";
-import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
+// AI Todo Copilot - Chat Agent API Route
+// Classifies messages and routes to N8N webhook for AI chat responses
 
+import { cookies } from "next/headers"
+import { NextRequest, NextResponse } from "next/server"
+import { createServerClient } from "@supabase/ssr"
+import { classifyMessage } from "@/lib/messageClassifier"
+
+/**
+ * POST handler that classifies user messages and routes to appropriate handler.
+ * If message is a task creation, returns immediately. Otherwise, forwards to N8N.
+ * 
+ * @param request - Request object containing message
+ * @returns JSON response with action and data
+ */
 export async function POST(request: NextRequest) {
   try {
     const { message } = await request.json();
@@ -59,18 +69,14 @@ export async function POST(request: NextRequest) {
     const n8nChatUrl = process.env.N8N_CHAT_WEBHOOK_URL;
 
     if (!n8nChatUrl) {
-      console.warn("[CHAT-AGENT] N8N_CHAT_WEBHOOK_URL not configured, using default reply");
-      return NextResponse.json(classification);
+      return NextResponse.json(classification)
     }
 
     // Payload: Send { message, user_id: user.id } to N8N
     const payload = {
       message,
       user_id: user.id,
-    };
-
-    console.log("[CHAT-AGENT] Calling N8N webhook:", n8nChatUrl);
-    console.log("[CHAT-AGENT] Payload:", payload);
+    }
 
     try {
       // Create AbortController for timeout (30 seconds)
@@ -84,40 +90,35 @@ export async function POST(request: NextRequest) {
         signal: controller.signal,
       });
 
-      clearTimeout(timeoutId);
-
-      console.log("[CHAT-AGENT] Response status:", response.status);
+      clearTimeout(timeoutId)
 
       // Read response body
-      const responseText = await response.text();
-      console.log("[CHAT-AGENT] Response body:", responseText || "(empty)");
+      const responseText = await response.text()
 
       if (!response.ok) {
-        console.error("[CHAT-AGENT] N8N webhook returned error status:", response.status, responseText);
-        throw new Error(`N8N webhook returned ${response.status}: ${responseText}`);
+        console.error("[CHAT-AGENT] N8N webhook returned error status:", response.status, responseText)
+        throw new Error(`N8N webhook returned ${response.status}: ${responseText}`)
       }
 
       // Try to parse as JSON
-      let data;
+      let data
       try {
-        data = responseText ? JSON.parse(responseText) : {};
-        console.log("[CHAT-AGENT] Parsed response:", data);
+        data = responseText ? JSON.parse(responseText) : {}
       } catch (parseError) {
-        console.error("[CHAT-AGENT] Failed to parse response as JSON:", parseError);
+        console.error("[CHAT-AGENT] Failed to parse response as JSON:", parseError)
         // If not JSON, use the text as reply
         return NextResponse.json({
           action: "reply",
           text: responseText || classification.text,
-        });
+        })
       }
 
       // Return the JSON response from N8N
-      const reply = data.reply || data.message || classification.text;
-      console.log("[CHAT-AGENT] Final reply:", reply);
+      const reply = data.reply || data.message || classification.text
 
-      return NextResponse.json({ action: "reply", text: reply });
-    } catch (error: any) {
-      if (error.name === "AbortError") {
+      return NextResponse.json({ action: "reply", text: reply })
+    } catch (error) {
+      if ((error as any).name === "AbortError") {
         console.error("[CHAT-AGENT] Request timeout after 30 seconds");
         return NextResponse.json(
           {
@@ -128,23 +129,17 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      console.error("[CHAT-AGENT] Error calling N8N webhook:", error);
-      console.error("[CHAT-AGENT] Error details:", {
-        message: error.message,
-        stack: error.stack,
-        name: error.name,
-      });
-
+      console.error("[CHAT-AGENT] Error calling N8N webhook:", error)
       return NextResponse.json(
         { action: "reply", text: "Sorry, I'm having trouble connecting to the chat service." },
         { status: 500 }
-      );
+      )
     }
   } catch (error) {
-    console.error("Chat agent error:", error);
+    console.error("[CHAT-AGENT] Internal error:", error)
     return NextResponse.json(
       { action: "reply", text: "Sorry, I'm having trouble connecting to the chat service." },
       { status: 500 }
-    );
+    )
   }
 }

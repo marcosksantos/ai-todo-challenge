@@ -1,12 +1,20 @@
+// AI Todo Copilot - WhatsAppButton Component
+// Floating button to connect WhatsApp and save phone number to user profile
+
 "use client";
 
-import { useState, useEffect } from "react";
-import { createClient } from "@/utils/supabase/client";
-import { X, Loader2 } from "lucide-react";
+import { useState, useEffect } from "react"
+import { X, Loader2 } from "lucide-react"
+import { createClient } from "@/utils/supabase/client"
+import type { User } from "@supabase/supabase-js"
 
+/**
+ * WhatsAppButton component that allows users to connect their WhatsApp account.
+ * Saves phone number to user profile and opens WhatsApp Web.
+ */
 export default function WhatsAppButton() {
   const supabase = createClient();
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [phone, setPhone] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -63,15 +71,15 @@ export default function WhatsAppButton() {
           });
 
         if (insertError) {
-          console.error("Error saving phone:", insertError);
-          alert(`Error saving phone number: ${insertError.message}`);
-          setIsLoading(false);
-          return;
+          console.error("Error saving phone:", insertError)
+          alert(`Error saving phone number: ${insertError.message}`)
+          setIsLoading(false)
+          return
         }
       }
 
       // Step 2: Redirect to WhatsApp
-      const whatsappUrl = "https://wa.me/5522992737876?text=Ola,%20vim%20pelo%20app!";
+      const whatsappUrl = "https://wa.me/5522992737876?text=Hello,%20I%20came%20from%20the%20app!";
       window.open(whatsappUrl, "_blank");
 
       // Step 3: Show success message and close modal
@@ -80,10 +88,11 @@ export default function WhatsAppButton() {
         setIsModalOpen(false);
         setSuccessMessage("");
         setPhone("");
-      }, 1500);
-    } catch (error: any) {
-      console.error("Error:", error);
-      alert(`Error: ${error.message || "Failed to save phone number"}`);
+      }, 1500)
+    } catch (error) {
+      console.error("Error saving phone number:", error)
+      const errorMessage = error instanceof Error ? error.message : "Failed to save phone number"
+      alert(`Error: ${errorMessage}`)
     } finally {
       setIsLoading(false);
     }
