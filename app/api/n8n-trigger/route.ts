@@ -41,7 +41,10 @@ export async function POST(request: NextRequest) {
     // This ensures Vercel doesn't cancel the request prematurely
     const fetchPromise = fetch(webhookUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { 
+        "Content-Type": "application/json",
+        "User-Agent": "Task-Copilot-App/1.0"
+      },
       body: JSON.stringify(n8nPayload),
     }).then(res => {
         console.log("✅ N8N Response Status:", res.status);
