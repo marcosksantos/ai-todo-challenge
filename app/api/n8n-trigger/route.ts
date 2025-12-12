@@ -37,15 +37,23 @@ export async function POST(request: NextRequest) {
     };
 
     // Send to N8N (Fire and Forget but with logging)
-    fetch(webhookUrl, {
+    // CRITICAL: Initiate fetch synchronously before returning response
+    // This ensures Vercel doesn't cancel the request prematurely
+    const fetchPromise = fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(n8nPayload),
     }).then(res => {
         console.log("✅ N8N Response Status:", res.status);
+        return res;
     }).catch(err => {
         console.error("🔥 N8N Fetch Error:", err);
+        throw err;
     });
+
+    // Explicitly mark as non-awaited to prevent cancellation
+    // The void operator ensures the promise is started but not awaited
+    void fetchPromise;
 
     return NextResponse.json({ success: true, sent_payload: n8nPayload });
 
