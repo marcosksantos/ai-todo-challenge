@@ -39,9 +39,8 @@ export async function POST(request: NextRequest) {
       action: "improve_title"
     };
 
-    // CRITICAL: Initiate fetch IMMEDIATELY after all validations
-    // The fetch() call starts the HTTP request synchronously when called
-    // We must ensure it's called before the function returns to prevent Vercel cancellation
+    // CRITICAL FIX: Start fetch and wait for request initiation (not completion)
+    // This ensures the HTTP request is actually sent before Vercel shuts down
     const fetchInit = {
       method: "POST" as const,
       headers: { 
@@ -51,9 +50,21 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify(n8nPayload),
     };
 
-    // Start the fetch immediately - this queues the HTTP request
-    // The void operator ensures we don't await, but the request is already initiated
-    void fetch(webhookUrl, fetchInit)
+    // Start fetch and wait for it to be initiated (not completed)
+    // Use Promise.race to wait only for the request to start, not finish
+    const fetchPromise = fetch(webhookUrl, fetchInit);
+    
+    // Wait for request initiation with a short timeout
+    // This ensures the HTTP request is queued and sent before function returns
+    await Promise.race([
+      fetchPromise.then(() => {
+        console.log("✅ N8N Request initiated successfully");
+      }),
+      new Promise(resolve => setTimeout(resolve, 100)) // 100ms timeout to ensure request starts
+    ]);
+
+    // Log response in background (don't await)
+    fetchPromise
       .then(res => {
         console.log("✅ N8N Response Status:", res.status);
         return res;
@@ -62,8 +73,6 @@ export async function POST(request: NextRequest) {
         console.error("🔥 N8N Fetch Error:", err);
       });
 
-    // Return immediately after initiating fetch
-    // The HTTP request is already queued and will be sent even if function returns
     return NextResponse.json({ success: true, sent_payload: n8nPayload });
 
   } catch (error) {
