@@ -4,11 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 export async function POST(request: NextRequest) {
   console.log("🚀 API Trigger Called"); 
   try {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+    // Parse body FIRST to minimize blocking operations before fetch
     const body = await request.json();
     console.log("📦 Payload received:", body);
     
@@ -28,6 +24,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Server Configuration Error: N8N_WEBHOOK_URL missing" }, { status: 500 });
     }
 
+    // Authenticate user (required for user_id in payload)
+    // CRITICAL: Do this as quickly as possible to minimize delay before fetch
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
     // Force strict JSON structure for N8N
     const n8nPayload = {
       id: taskId,
@@ -36,28 +39,31 @@ export async function POST(request: NextRequest) {
       action: "improve_title"
     };
 
-    // Send to N8N (Fire and Forget but with logging)
-    // CRITICAL: Initiate fetch synchronously before returning response
-    // This ensures Vercel doesn't cancel the request prematurely
-    const fetchPromise = fetch(webhookUrl, {
-      method: "POST",
+    // CRITICAL: Initiate fetch IMMEDIATELY after all validations
+    // The fetch() call starts the HTTP request synchronously when called
+    // We must ensure it's called before the function returns to prevent Vercel cancellation
+    const fetchInit = {
+      method: "POST" as const,
       headers: { 
         "Content-Type": "application/json",
         "User-Agent": "Task-Copilot-App/1.0"
       },
       body: JSON.stringify(n8nPayload),
-    }).then(res => {
+    };
+
+    // Start the fetch immediately - this queues the HTTP request
+    // The void operator ensures we don't await, but the request is already initiated
+    void fetch(webhookUrl, fetchInit)
+      .then(res => {
         console.log("✅ N8N Response Status:", res.status);
         return res;
-    }).catch(err => {
+      })
+      .catch(err => {
         console.error("🔥 N8N Fetch Error:", err);
-        throw err;
-    });
+      });
 
-    // Explicitly mark as non-awaited to prevent cancellation
-    // The void operator ensures the promise is started but not awaited
-    void fetchPromise;
-
+    // Return immediately after initiating fetch
+    // The HTTP request is already queued and will be sent even if function returns
     return NextResponse.json({ success: true, sent_payload: n8nPayload });
 
   } catch (error) {
