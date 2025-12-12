@@ -140,28 +140,59 @@ export default function TodoList() {
             is_ai_processing: false // DB doesn't store this, will be set below if needed
           }
           
+          console.log('[TodoList] 🔄 Realtime UPDATE received:', {
+            taskId: updatedTask.id,
+            oldTitle: '...',
+            newTitle: updatedTask.title,
+            hasDescription: !!updatedTask.description
+          })
+          
           setTasks(current => {
             // Update the specific task in local state
             return current.map(task => {
               if (task.id === updatedTask.id) {
                 // Don't overwrite if user is currently editing this task
                 if (editingTaskIds.has(updatedTask.id)) {
+                  console.log('[TodoList] ⏸️ Skipping update - task is being edited:', updatedTask.id)
                   return task
                 }
                 
-                // If title changed (AI update), remove processing indicator
-                const titleChanged = task.title !== updatedTask.title
-                const descriptionChanged = task.description !== updatedTask.description
+                // Check if title or description changed (AI update)
+                const titleChanged = task.title.trim() !== updatedTask.title.trim()
+                const oldDesc = (task.description || '').trim()
+                const newDesc = (updatedTask.description || '').trim()
+                const descriptionChanged = oldDesc !== newDesc
                 
                 // If AI updated title or description, clear processing flag
                 if (titleChanged || descriptionChanged) {
+                  console.log('[TodoList] ✅ AI update detected - clearing processing flag:', {
+                    taskId: updatedTask.id,
+                    titleChanged,
+                    descriptionChanged,
+                    oldTitle: task.title,
+                    newTitle: updatedTask.title,
+                    hadDescription: !!task.description,
+                    hasDescription: !!updatedTask.description
+                  })
                   return { 
                     ...updatedTask, 
                     is_ai_processing: false
                   }
                 }
                 
-                // Otherwise preserve the current is_ai_processing state
+                // Log when no changes detected (for debugging stuck states)
+                if (task.is_ai_processing) {
+                  console.log('[TodoList] ⚠️ Task still processing but no changes detected:', {
+                    taskId: updatedTask.id,
+                    currentTitle: task.title,
+                    dbTitle: updatedTask.title,
+                    currentDesc: task.description || '(empty)',
+                    dbDesc: updatedTask.description || '(empty)'
+                  })
+                }
+                
+                // If no changes detected, preserve the current is_ai_processing state
+                // This handles cases where only other fields (like completed) changed
                 return { 
                   ...updatedTask, 
                   is_ai_processing: task.is_ai_processing ?? false
@@ -236,6 +267,11 @@ export default function TodoList() {
 
         // Trigger AI processing via N8N webhook (fire-and-forget)
         // Send exactly { taskId, title } as expected by the API
+        console.log('[TodoList] 🚀 Triggering N8N for task:', {
+          taskId: newTask.id,
+          title: newTask.title
+        })
+        
         fetch('/api/n8n-trigger', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -244,9 +280,26 @@ export default function TodoList() {
             taskId: newTask.id,
             title: newTask.title
           })
-        }).catch((error) => {
+        })
+        .then(async (response) => {
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}))
+            console.error('[TodoList] ❌ N8N trigger failed:', {
+              status: response.status,
+              statusText: response.statusText,
+              error: errorData
+            })
+          } else {
+            const data = await response.json().catch(() => ({}))
+            console.log('[TodoList] ✅ N8N trigger sent successfully:', {
+              taskId: newTask.id,
+              response: data
+            })
+          }
+        })
+        .catch((error) => {
           // Log error but don't break the UI - AI processing is optional
-          console.error('[TodoList] Error triggering AI processing:', error)
+          console.error('[TodoList] 💥 Error triggering AI processing:', error)
         })
       }
 

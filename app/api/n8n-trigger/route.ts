@@ -1,90 +1,56 @@
-// AI Todo Copilot - N8N Trigger API Route
-// Proxies task creation events to N8N webhook for AI processing
+import { createClient } from "@/utils/supabase/server";
+import { NextRequest, NextResponse } from "next/server";
 
-import { cookies } from 'next/headers'
-import { NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
-
-/**
- * POST handler that triggers N8N webhook for AI task processing.
- * Authenticates user, validates request, and fires webhook asynchronously.
- * 
- * @param request - Request object containing taskId and title
- * @returns JSON response with success status
- */
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  console.log("🚀 API Trigger Called"); 
   try {
-    const cookieStore = await cookies()
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() {
-            return cookieStore.getAll()
-          },
-          setAll(cookiesToSet) {
-            try {
-              cookiesToSet.forEach(({ name, value, options }) =>
-                cookieStore.set(name, value, options)
-              )
-            } catch {
-              // Ignore errors in API Routes (cookies may be read-only)
-            }
-          },
-        },
-      }
-    )
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
 
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    if (authError || !user) {
-      console.error('[N8N-TRIGGER] Authentication error:', authError)
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const body = await request.json();
+    console.log("📦 Payload received:", body);
+    
+    // Fallback for both naming conventions to be safe
+    const taskId = body.taskId || body.id;
+    const title = body.title;
+
+    if (!taskId || !title) {
+      console.error("❌ Missing Data:", body);
+      return NextResponse.json({ error: "Missing taskId or title" }, { status: 400 });
     }
 
-    const body = await request.json()
-    const { taskId, title } = body
+    const webhookUrl = process.env.N8N_WEBHOOK_URL;
+    console.log("🔗 Target N8N URL:", webhookUrl ? "Found (Hidden)" : "MISSING!!");
 
-    // Validate request body
-    if (!taskId || typeof taskId !== 'string') {
-      return NextResponse.json({ error: 'Missing or invalid taskId' }, { status: 400 })
+    if (!webhookUrl) {
+      return NextResponse.json({ error: "Server Configuration Error: N8N_WEBHOOK_URL missing" }, { status: 500 });
     }
 
-    if (!title || typeof title !== 'string') {
-      return NextResponse.json({ error: 'Missing or invalid title' }, { status: 400 })
-    }
-
-    const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL
-
-    if (!n8nWebhookUrl) {
-      console.error('[N8N-TRIGGER] N8N_WEBHOOK_URL not configured')
-      return NextResponse.json({ error: 'Configuration Error' }, { status: 500 })
-    }
-
-    // Prepare payload for N8N (snake_case as expected by N8N)
+    // Force strict JSON structure for N8N
     const n8nPayload = {
       id: taskId,
       title: title,
       user_id: user.id,
-      action: 'improve_title'
-    }
+      action: "improve_title"
+    };
 
-    // Fire-and-forget: Trigger N8N webhook asynchronously
-    fetch(n8nWebhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    // Send to N8N (Fire and Forget but with logging)
+    fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(n8nPayload),
-    }).catch((error) => {
-      console.error('[N8N-TRIGGER] Error calling N8N webhook:', error)
-    })
+    }).then(res => {
+        console.log("✅ N8N Response Status:", res.status);
+    }).catch(err => {
+        console.error("🔥 N8N Fetch Error:", err);
+    });
 
-    return NextResponse.json({ success: true, message: 'Sent to AI' })
+    return NextResponse.json({ success: true, sent_payload: n8nPayload });
+
   } catch (error) {
-    console.error('[N8N-TRIGGER] Internal error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    console.error("💥 Critical Error in Trigger:", error);
+    return NextResponse.json({ error: String(error) }, { status: 500 });
   }
 }
