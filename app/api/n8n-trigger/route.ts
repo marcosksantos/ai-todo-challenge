@@ -50,30 +50,33 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify(n8nPayload),
     };
 
-    // Start fetch and wait for it to be initiated (not completed)
-    // Use Promise.race to wait only for the request to start, not finish
+    // Call webhook - wait for it to start but don't block on completion
     const fetchPromise = fetch(webhookUrl, fetchInit);
     
-    // Wait for request initiation with a short timeout
-    // This ensures the HTTP request is queued and sent before function returns
+    // Wait a bit to ensure request is sent (fire-and-forget pattern)
     await Promise.race([
-      fetchPromise.then(() => {
-        console.log("✅ N8N Request initiated successfully");
+      fetchPromise.then(async (res) => {
+        const status = res.status;
+        const text = await res.text();
+        console.log("✅ N8N Response:", { status, text: text.substring(0, 200) });
+        if (!res.ok) {
+          console.error("❌ N8N returned error status:", status, text);
+        }
+        return res;
       }),
-      new Promise(resolve => setTimeout(resolve, 100)) // 100ms timeout to ensure request starts
+      new Promise(resolve => setTimeout(resolve, 200)) // Wait 200ms to ensure request starts
     ]);
 
-    // Log response in background (don't await)
-    fetchPromise
-      .then(res => {
-        console.log("✅ N8N Response Status:", res.status);
-        return res;
-      })
-      .catch(err => {
-        console.error("🔥 N8N Fetch Error:", err);
-      });
+    // Log errors in background
+    fetchPromise.catch(err => {
+      console.error("🔥 N8N Fetch Error:", err.message, err.stack);
+    });
 
-    return NextResponse.json({ success: true, sent_payload: n8nPayload });
+    return NextResponse.json({ 
+      success: true, 
+      sent_payload: n8nPayload,
+      webhook_url: webhookUrl ? "configured" : "missing"
+    });
 
   } catch (error) {
     console.error("💥 Critical Error in Trigger:", error);

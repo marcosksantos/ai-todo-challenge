@@ -3,7 +3,7 @@
 
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, Loader2, Wifi, WifiOff, LogOut } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
@@ -43,6 +43,7 @@ export default function TodoList() {
   const [realtimeStatus, setRealtimeStatus] = useState<string>('disconnected')
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null)
   const [editingTaskIds, setEditingTaskIds] = useState<Set<string>>(new Set())
+  const safetyTimeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map())
 
   // Initialize: Authenticate user and load initial tasks
   useEffect(() => {
@@ -57,6 +58,14 @@ export default function TodoList() {
     }
     initData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Cleanup safety timeouts on unmount
+  useEffect(() => {
+    return () => {
+      safetyTimeoutsRef.current.forEach((timeout) => clearTimeout(timeout))
+      safetyTimeoutsRef.current.clear()
+    }
   }, [])
 
   // Realtime Subscription: Listen for INSERT, UPDATE, DELETE events
@@ -158,22 +167,34 @@ export default function TodoList() {
                 }
                 
                 // Check if title or description changed (AI update)
-                const titleChanged = task.title.trim() !== updatedTask.title.trim()
+                // Normalize strings for comparison (trim and case-insensitive for title)
+                const currentTitle = (task.title || '').trim().toLowerCase()
+                const newTitle = (updatedTask.title || '').trim().toLowerCase()
+                const titleChanged = currentTitle !== newTitle
+                
                 const oldDesc = (task.description || '').trim()
                 const newDesc = (updatedTask.description || '').trim()
                 const descriptionChanged = oldDesc !== newDesc
                 
                 // If AI updated title or description, clear processing flag
-                if (titleChanged || descriptionChanged) {
+                if ((titleChanged || descriptionChanged) && task.is_ai_processing) {
                   console.log('[TodoList] ✅ AI update detected - clearing processing flag:', {
                     taskId: updatedTask.id,
                     titleChanged,
                     descriptionChanged,
                     oldTitle: task.title,
                     newTitle: updatedTask.title,
+                    oldTitleNormalized: currentTitle,
+                    newTitleNormalized: newTitle,
                     hadDescription: !!task.description,
                     hasDescription: !!updatedTask.description
                   })
+                  // Clear safety timeout if it exists
+                  const timeout = safetyTimeoutsRef.current.get(updatedTask.id)
+                  if (timeout) {
+                    clearTimeout(timeout)
+                    safetyTimeoutsRef.current.delete(updatedTask.id)
+                  }
                   return { 
                     ...updatedTask, 
                     is_ai_processing: false
@@ -186,8 +207,10 @@ export default function TodoList() {
                     taskId: updatedTask.id,
                     currentTitle: task.title,
                     dbTitle: updatedTask.title,
+                    titlesEqual: !titleChanged,
                     currentDesc: task.description || '(empty)',
-                    dbDesc: updatedTask.description || '(empty)'
+                    dbDesc: updatedTask.description || '(empty)',
+                    descsEqual: !descriptionChanged
                   })
                 }
                 
@@ -272,6 +295,20 @@ export default function TodoList() {
           title: newTask.title
         })
         
+        // Set a safety timeout to clear processing flag after 30 seconds
+        // This prevents the UI from getting stuck if N8N doesn't update the task
+        const safetyTimeout = setTimeout(() => {
+          setTasks(current => current.map(t => {
+            if (t.id === newTask.id && t.is_ai_processing) {
+              console.warn('[TodoList] ⏰ Safety timeout: Clearing is_ai_processing for task:', newTask.id)
+              return { ...t, is_ai_processing: false }
+            }
+            return t
+          }))
+          safetyTimeoutsRef.current.delete(newTask.id)
+        }, 30000) // 30 seconds
+        safetyTimeoutsRef.current.set(newTask.id, safetyTimeout)
+        
         fetch('/api/n8n-trigger', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -289,17 +326,37 @@ export default function TodoList() {
               statusText: response.statusText,
               error: errorData
             })
+            // Clear processing flag immediately on error
+            const timeout = safetyTimeoutsRef.current.get(newTask.id)
+            if (timeout) {
+              clearTimeout(timeout)
+              safetyTimeoutsRef.current.delete(newTask.id)
+            }
+            setTasks(current => current.map(t => 
+              t.id === newTask.id ? { ...t, is_ai_processing: false } : t
+            ))
           } else {
             const data = await response.json().catch(() => ({}))
             console.log('[TodoList] ✅ N8N trigger sent successfully:', {
               taskId: newTask.id,
               response: data
             })
+            // Note: Safety timeout will still run as backup
+            // It will be cleared when realtime update arrives
           }
         })
         .catch((error) => {
           // Log error but don't break the UI - AI processing is optional
           console.error('[TodoList] 💥 Error triggering AI processing:', error)
+          // Clear processing flag immediately on error
+          const timeout = safetyTimeoutsRef.current.get(newTask.id)
+          if (timeout) {
+            clearTimeout(timeout)
+            safetyTimeoutsRef.current.delete(newTask.id)
+          }
+          setTasks(current => current.map(t => 
+            t.id === newTask.id ? { ...t, is_ai_processing: false } : t
+          ))
         })
       }
 
